@@ -1,0 +1,181 @@
+---
+# Tenant: gamma (Tenant C) - orgShortId: 3a4b5c6d7e8f
+# Apps:
+#   1. dashboard-app (数据看板) shortId: 9a0b1c2d3e4f
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gamma
+  labels:
+    tenant: gamma
+    org-short-id: 3a4b5c6d7e8f
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tenant-db
+  namespace: gamma
+spec:
+  serviceName: tenant-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tenant-db
+  template:
+    metadata:
+      labels:
+        app: tenant-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - {name: POSTGRES_DB, value: tenant_gamma}
+            - {name: POSTGRES_USER, value: tenant_admin}
+            - {name: POSTGRES_PASSWORD, value: gamma_pg_poc_123}
+          ports: [{containerPort: 5432}]
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-db
+  namespace: gamma
+spec:
+  ports: [{port: 5432, targetPort: 5432}]
+  selector: {app: tenant-db}
+---
+# ========== App: dashboard-app (数据看板) ==========
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-app-frontend
+  namespace: gamma
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="zh-CN"><head><meta charset="UTF-8"><title>数据看板 - Tenant C</title>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0}
+    .header{background:#1e293b;padding:16px 24px;border-bottom:1px solid #334155}
+    .header h1{font-size:20px;color:#38bdf8}.header p{font-size:13px;color:#94a3b8;margin-top:4px}
+    .container{max-width:1200px;margin:24px auto;padding:0 24px}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+    .metric{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:20px;text-align:center}
+    .metric .value{font-size:36px;font-weight:700;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .metric .label{font-size:12px;color:#94a3b8;margin-top:4px;text-transform:uppercase}
+    .chart-row{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+    .chart{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:20px}
+    .chart h3{font-size:14px;color:#94a3b8;margin-bottom:16px}
+    .bar{display:flex;align-items:center;margin-bottom:10px}
+    .bar-label{width:80px;font-size:12px;color:#94a3b8}
+    .bar-track{flex:1;height:24px;background:#0f172a;border-radius:4px;overflow:hidden}
+    .bar-fill{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:8px;font-size:11px;color:#fff}
+    .list-item{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #334155;font-size:13px}
+    .list-item:last-child{border:none}
+    </style></head><body>
+    <div class="header"><h1>数据看板</h1><p>Tenant C - 运营数据总览</p></div>
+    <div class="container">
+      <div class="grid">
+        <div class="metric"><div class="value" id="m1">0</div><div class="label">项目总数</div></div>
+        <div class="metric"><div class="value" id="m2">¥0</div><div class="label">总预算</div></div>
+        <div class="metric"><div class="value" id="m3">0</div><div class="label">活跃项目</div></div>
+        <div class="metric"><div class="value" id="m4">0%</div><div class="label">完成率</div></div>
+      </div>
+      <div class="chart-row">
+        <div class="chart"><h3>项目预算分布</h3><div id="bars"></div></div>
+        <div class="chart"><h3>最近项目</h3><div id="recent"></div></div>
+      </div>
+    </div>
+    <script>
+    const API=window.location.origin+'/api/data/projects';
+    const colors=['#38bdf8','#818cf8','#34d399','#fbbf24','#f87171'];
+    async function load(){const r=await fetch(API);const d=await r.json();const recs=d.records||[];
+    document.getElementById('m1').textContent=recs.length;
+    const total=recs.reduce((s,p)=>s+(Number(p.budget)||0),0);
+    document.getElementById('m2').textContent='¥'+total.toLocaleString();
+    const active=recs.filter(p=>p.status==='active').length;
+    document.getElementById('m3').textContent=active;
+    const done=recs.filter(p=>p.status==='done').length;
+    document.getElementById('m4').textContent=recs.length?Math.round(done/recs.length*100)+'%':'0%';
+    const maxB=Math.max(...recs.map(p=>Number(p.budget)||0),1);
+    document.getElementById('bars').innerHTML=recs.slice(0,5).map((p,i)=>`<div class="bar"><div class="bar-label">${p.name}</div>
+    <div class="bar-track"><div class="bar-fill" style="width:${(Number(p.budget)||0)/maxB*100}%;background:${colors[i%5]}">¥${(Number(p.budget)||0).toLocaleString()}</div></div></div>`).join('');
+    document.getElementById('recent').innerHTML=recs.slice(-5).reverse().map(p=>`<div class="list-item"><span>${p.name}</span><span style="color:${p.status==='active'?'#34d399':'#94a3b8'}">${p.status}</span></div>`).join('')}
+    load();
+    </script></body></html>
+  nginx.conf: |
+    server { listen 80; root /usr/share/nginx/html; index index.html;
+    location / { try_files $uri $uri/ /index.html; }
+    location /api/ { proxy_pass http://localhost:3000/api/; proxy_set_header Host $host; } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-app
+  namespace: gamma
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard-app
+  template:
+    metadata:
+      labels:
+        app: dashboard-app
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports: [{containerPort: 80}]
+          volumeMounts:
+            - {name: html, mountPath: /usr/share/nginx/html}
+            - {name: conf, mountPath: /etc/nginx/conf.d/default.conf, subPath: nginx.conf}
+        - name: runtime
+          image: app-runtime:poc
+          ports: [{containerPort: 3000}]
+          env:
+            - {name: APP_ID, value: "9a0b1c2d-3e4f-5a6b-7c8d-333333333333"}
+            - {name: APP_SHORT_ID, value: "9a0b1c2d3e4f"}
+            - {name: ORG_ID, value: "3a4b5c6d-7e8f-9a0b-1c2d-333333333333"}
+            - {name: ORG_SHORT_ID, value: "3a4b5c6d7e8f"}
+            - {name: DATABASE_URL, value: "postgresql://app_9a0b1c2d3e4f:dash123@tenant-db.gamma.svc.cluster.local:5432/tenant_gamma"}
+            - {name: S3_BUCKET, value: "app-host-gamma-3a4b5c6d7e8f"}
+            - {name: S3_PREFIX, value: "9a0b1c2d-3e4f-5a6b-7c8d-333333333333/"}
+            - {name: JWT_SECRET, value: "gamma-dash-jwt-secret"}
+            - name: SCHEMA_DEF
+              value: >-
+                {"tables":{"projects":{"columns":{"id":"serial PRIMARY KEY","name":"text NOT NULL","budget":"numeric DEFAULT 0","status":"text DEFAULT 'active'","owner":"text","created_at":"timestamptz DEFAULT now()"}}}}
+      volumes:
+        - {name: html, configMap: {name: dashboard-app-frontend}}
+        - {name: conf, configMap: {name: dashboard-app-frontend}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-app
+  namespace: gamma
+spec:
+  ports:
+    - {port: 80, targetPort: 80}
+    - {name: api, port: 3000, targetPort: 3000}
+  selector:
+    app: dashboard-app
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: dashboard-app
+  namespace: gamma
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Host(`9a0b1c2d3e4f.app.poc.local`)
+      kind: Rule
+      services:
+        - {name: dashboard-app, port: 80}

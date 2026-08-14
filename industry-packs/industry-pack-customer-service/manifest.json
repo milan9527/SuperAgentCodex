@@ -1,0 +1,135 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2025-05-07T12:00:00.000Z",
+  "generator": "super-agent-batch-v2",
+  "industry": {
+    "id": "customer-service",
+    "name": "客户服务",
+    "icon": "🎧",
+    "color": "#EC4899"
+  },
+  "stats": {
+    "scopeCount": 4,
+    "agentCount": 15,
+    "skillCount": 52,
+    "workflowCount": 4,
+    "twinCount": 1,
+    "sopCount": 4
+  },
+  "scopes": [
+    {
+      "dirName": "ticket-processing",
+      "name": "工单处理",
+      "agents": [
+        "channel-router",
+        "ticket-resolver",
+        "sla-escalation-monitor",
+        "satisfaction-followup"
+      ],
+      "skills": [
+        "anomaly-detection",
+        "capacity-monitoring",
+        "cross-department-collaboration",
+        "customer-communication",
+        "escalation-management",
+        "faq-auto-reply",
+        "feedback-analysis",
+        "improvement-reporting",
+        "intelligent-routing",
+        "intent-classification",
+        "knowledge-retrieval",
+        "low-score-recovery",
+        "priority-assessment",
+        "satisfaction-survey",
+        "sla-tracking",
+        "solution-generation"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "complaint-management",
+      "name": "投诉管理",
+      "agents": [
+        "complaint-intake-classifier",
+        "complaint-resolution",
+        "complaint-root-cause",
+        "regulatory-compliance"
+      ],
+      "skills": [
+        "approval-workflow",
+        "compensation-planning",
+        "complaint-classification",
+        "compliance-documentation",
+        "customer-communication",
+        "data-trend-reporting",
+        "evidence-investigation",
+        "improvement-tracking",
+        "public-opinion-monitoring",
+        "regulatory-deadline-tracking",
+        "root-cause-analysis",
+        "sentiment-analysis"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "knowledge-base-ops",
+      "name": "知识库运营",
+      "agents": [
+        "knowledge-authoring-assistant",
+        "content-lifecycle-manager",
+        "knowledge-quality-optimizer"
+      ],
+      "skills": [
+        "ai-accuracy-monitoring",
+        "content-quality-check",
+        "content-requirement-analysis",
+        "content-transformation",
+        "emergency-publishing",
+        "lifecycle-tracking",
+        "metadata-tagging",
+        "quality-assessment",
+        "review-coordination",
+        "search-optimization",
+        "template-based-authoring",
+        "usage-data-analysis"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "cross-border-vertical-service",
+      "name": "跨境与行业垂直客服",
+      "agents": [
+        "multiplatform-gateway",
+        "vertical-business-processor",
+        "cross-border-analytics",
+        "opportunity-tracker"
+      ],
+      "skills": [
+        "automated-marketing-followup",
+        "cross-border-data-analytics",
+        "cross-session-memory-management",
+        "intent-scoring-engine",
+        "mcp-tool-orchestration",
+        "multiplatform-message-routing",
+        "opportunity-signal-detection",
+        "platform-health-surveillance",
+        "policy-engine-execution",
+        "realtime-translation",
+        "smart-scheduling",
+        "translation-quality-monitoring"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    }
+  ],
+  "digitalTwins": [
+    {
+      "dirName": "客服总监",
+      "name": "客服总监",
+      "role": "VP of Customer Service / 客户体验总监"
+    }
+  ]
+}

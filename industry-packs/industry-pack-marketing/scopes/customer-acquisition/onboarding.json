@@ -1,0 +1,64 @@
+{
+  "title": "配置你的获客系统",
+  "description": "填写以下信息，AI Agent 将根据你的业务场景定制获客策略",
+  "variables": [
+    {
+      "key": "company_name",
+      "label": "公司/品牌名称",
+      "type": "text",
+      "required": true,
+      "placeholder": "例：字节跳动"
+    },
+    {
+      "key": "product_description",
+      "label": "你的产品/服务是什么",
+      "type": "textarea",
+      "required": true,
+      "placeholder": "简要描述你的核心产品、目标客户和主要卖点"
+    },
+    {
+      "key": "target_customers",
+      "label": "目标客户画像",
+      "type": "textarea",
+      "required": true,
+      "placeholder": "例：中小企业主、25-45岁、关注降本增效"
+    },
+    {
+      "key": "acquisition_channels",
+      "label": "主要获客渠道",
+      "type": "multiselect",
+      "required": true,
+      "options": ["电话外呼", "短信营销", "微信私域", "邮件", "广告投放", "社交媒体"]
+    },
+    {
+      "key": "daily_lead_volume",
+      "label": "预期日均新线索量",
+      "type": "select",
+      "required": false,
+      "options": ["< 50", "50-200", "200-1000", "1000-5000", "5000+"]
+    },
+    {
+      "key": "existing_crm",
+      "label": "当前使用的 CRM 系统",
+      "type": "text",
+      "required": false,
+      "placeholder": "例：Salesforce、飞书、自研系统（没有可留空）"
+    }
+  ],
+  "postDeployActions": [
+    {
+      "type": "inject_memory",
+      "title": "企业业务背景",
+      "category": "fact",
+      "is_pinned": true,
+      "template": "【企业信息】公司名称：{{company_name}}。产品/服务：{{product_description}}。目标客户画像：{{target_customers}}。主要获客渠道：{{acquisition_channels}}。日均新线索量：{{daily_lead_volume}}。CRM系统：{{existing_crm}}。"
+    },
+    {
+      "type": "inject_memory",
+      "title": "获客策略定制要点",
+      "category": "decision",
+      "is_pinned": true,
+      "template": "基于{{company_name}}的业务特点，获客策略需重点关注：1）通过{{acquisition_channels}}渠道触达{{target_customers}}；2）外呼话术需围绕{{product_description}}的核心卖点设计；3）线索评分模型需结合目标客户画像特征加权。"
+    }
+  ]
+}

@@ -1,0 +1,473 @@
+{
+  "title": "合同审查与全生命周期管理工作流",
+  "description": "覆盖合同从业务需求发起、模板匹配与起草、条款审查与风险识别、风险评级与法律意见、审批流转、签署管控、归档建档到履约监控和到期管理的完整业务流程。支持标准合同和非标合同两条路径，根据合同金额和风险等级自动确定审批层级。",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "接收并解析合同需求",
+      "type": "agent",
+      "prompt": "接收业务部门提交的合同需求申请，解析交易要素表（交易对手、标的物、金额、期限、特殊需求等），验证必填信息完整性。如信息不完整则列出缺失项要求补充。完成后确认受理并输出：合同需求编号、合同类型分类（标准/非标）、紧急程度判定、预计完成时间。需在收到需求后2小时内完成。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "contract-drafting-assistant",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "OA系统",
+          "业务需求表单"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "判断合同类型分流",
+      "type": "agent",
+      "prompt": "根据需求解析结果判断合同类型：如果业务需求可以通过标准合同模板满足（交易类型有对应模板且无特殊条款需求），则走标准合同路径；如果需要定制起草或对方提供了合同版本，则走非标合同路径。输出分流决定和依据说明。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-assistant",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "标准合同模板匹配与初稿生成",
+      "type": "agent",
+      "prompt": "根据合同需求的交易类型、金额档位和交易对手特征，从标准模板库中匹配最适配的合同模板。将交易要素填充到模板对应位置，根据合同金额自动调整条款严格度（≥50万加入严格违约条款，≥100万增加履约保证条款，≥200万增加阶段评审机制）。输出完整的合同初稿V1.0，附模板使用说明。时效要求：4小时内完成。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-assistant",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "合同模板库"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "非标合同定制起草",
+      "type": "agent",
+      "prompt": "针对非标合同需求，基于最近似的标准模板进行改造，或从零开始定制起草。对于业务部门的特殊条款需求，使用精确的法律术语编写，确保条款逻辑自洽。所有非标条款标注★标记并说明偏离标准模板的原因。如为对方提供的版本合同，直接标记为待审查状态。输出合同初稿和非标条款说明。时效要求：24小时内完成。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-assistant",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "合同模板库"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "合同条款逐条审查",
+      "type": "agent",
+      "prompt": "对合同文本进行结构化拆解和逐条审查。执行以下步骤：1）按标准条款体系分类（主体、标的、价款、履行、违约、保密、IP、不可抗力、争议解决、终止、附则）；2）逐条对照标准模板进行偏差分析；3）对五大必审核心条款（违约责任、知识产权归属、保密义务、争议解决、不可抗力）进行深度风险审查；4）每个偏差条款标注风险等级（高/中/低）并附法律依据；5）对高/中风险条款编写具体的替代条款文本（方案A最优/方案B折中/方案C底线）。输出完整的《合同审查意见表》。",
+      "dependentTasks": [
+        "task-3",
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "contract-clause-reviewer",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5b",
+      "title": "交叉验证双人审查",
+      "type": "agent",
+      "prompt": "判断是否需要启动交叉验证：如果合同金额>100万元，或风险评级预判为C/D级，或涉及关联交易、对赌条款、跨境交易，则必须启动双人交叉验证。交叉验证流程：由法务负责人指定第二审查人（资历≥主审），独立审阅合同和主审的审查意见，重点验证高风险标注是否准确、是否有遗漏风险点。双人讨论达成一致意见后出具《交叉验证确认表》。如存在重大分歧则升级至法务负责人仲裁。交叉验证需在主审完成后8小时内完成。如不满足触发条件则跳过本环节直接进入下一步。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "contract-clause-reviewer",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "判断是否存在高风险条款",
+      "type": "agent",
+      "prompt": "分析条款审查结果（含交叉验证结论），判断是否存在高风险条款（红色标注）。如果存在高风险条款，需要人工法务介入确认是否接受该风险或要求修改；如果仅有中低风险条款，则直接进入风险评级环节。输出判断结果：存在高风险（需人工确认）/ 无高风险（继续流程）。",
+      "dependentTasks": [
+        "task-5b"
+      ],
+      "metadata": {
+        "agentRef": "contract-clause-reviewer",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "高风险条款人工确认处理",
+      "type": "action",
+      "prompt": "将高风险条款及修改建议提交法务负责人进行人工确认。提供以下信息：1）高风险条款原文及所在位置；2）风险分析说明（可能的法律后果和经济影响）；3）修改建议方案A/B/C；4）如对方不接受修改的应对策略。等待法务负责人决定：接受风险继续流程 / 要求修改后重新审查 / 建议拒绝签署。如要求修改，将修改意见反馈给条款审查环节重新处理。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "contract-clause-reviewer",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "OA审批系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "合同整体风险评级",
+      "type": "agent",
+      "prompt": "综合以下信息对合同进行整体风险评级：1）条款审查结果（高/中/低风险条款数量和严重程度）；2）交易对手信用评估（工商信息、诉讼记录、财务状况、历史履约表现）；3）交易结构复杂度（是否涉及关联交易、对赌、跨境等）；4）履约风险（标的可控性、双方能力匹配度）。按四维度各25分进行评分，得出总分并确定风险等级：A级(85-100)/B级(70-84)/C级(55-69)/D级(<55)。同时确定审批层级：A/B级且<50万→业务负责人；C级或≥50万→法务审核；D级或≥200万→法务总监。",
+      "dependentTasks": [
+        "task-5b",
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "contract-risk-assessor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "企业信用查询系统",
+          "内部合作历史数据库"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "出具法律意见书",
+      "type": "agent",
+      "prompt": "基于条款审查发现和风险评级结论，编写正式的法律意见书。意见书必须包含以下章节：(一)基本情况概述（合同类型、交易方、金额、期限）；(二)条款审查结论汇总；(三)交易对手风险评估；(四)整体风险评级及依据；(五)核心风险点分析（每点含风险描述、法律后果、概率评估、影响评估）；(六)风险缓释建议（具体可操作的措施）；(七)签署建议与注意事项。确保所有法条引用精确到条款号，分析逻辑完整，结论明确。标准意见2个工作日内完成。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "contract-risk-assessor",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "确定审批层级并发起审批",
+      "type": "action",
+      "prompt": "根据风险评级和合同金额确定审批路径，通过OA系统发起审批流程。审批材料包括：合同最终版本、审查意见表、风险评级报告、法律意见书。审批路径：路径一（A/B级+<50万）→业务负责人审批；路径二（C级或≥50万）→业务负责人+法务审核；路径三（D级或≥200万）→业务负责人+法务审核+法务总监审核。监控审批进度，超时自动催办。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "contract-lifecycle-manager",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "OA审批系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "审批结果处理分流",
+      "type": "agent",
+      "prompt": "接收审批结果并确定后续路径：1）审批通过→进入签署流转环节；2）审批驳回→记录驳回原因，退回至合同条款审查环节进行修改（最多允许2次驳回）；3）附条件通过→明确条件内容，待条件落实后进入签署环节。输出审批结果和后续路径指引。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "contract-lifecycle-manager",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "OA审批系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "合同签署流转管理",
+      "type": "agent",
+      "prompt": "管理合同签署流程。执行步骤：1）确认审批记录完整且合同为最终定稿版；2）验证我方签署授权人和印章类型正确；3）验证对方签署代表的授权委托书有效性；4）选择签署方式（电子签优先，对方不接受则纸质签）；5）电子签：创建任务→发送邀请→监控→确认；纸质签：打印→用印→快递→跟踪→核验；6）签署完成后24小时内完成扫描归档。签署时限：审批通过后5个工作日。逾期5天提醒，10天升级，15天评估是否终止。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "contract-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "电子签约平台",
+          "印章管理系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "合同归档与台账建设",
+      "type": "agent",
+      "prompt": "合同签署完成后24小时内完成归档建档工作：1）建立合同台账记录（编号、名称、类型、对手、金额、签署日期、生效日期、到期日期）；2）从合同文本提取关键履行节点并设置监控提醒（付款日/交付日/验收日/里程碑）；3）录入风险评级和重点监控方向；4）建立合同关联关系（主合同/补充协议/框架协议/订单）；5）归档全套文档（合同原件、审批记录、法律意见书、谈判记录）；6）确认归档完整率=100%。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "contract-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "合同管理系统",
+          "文档管理系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "履约进度持续监控",
+      "type": "agent",
+      "prompt": "对签署生效的合同执行持续履约监控：1）按台账设定的关键节点自动发出预警（付款前7天、交付前14天、验收前7天）；2）定期确认履约状态；3）异常分级处理——一级预警（节点提醒）通知业务部门、二级预警（逾期≤15天）催告并记录、三级预警（逾期>15天）升级至法务评估违约责任、四级预警（明确无法履行）启动紧急法律行动；4）月度生成履约监控报告（在履合同统计、异常预警处理情况、对手履约评分）。特别关注风控评估师标注的重点监控方向。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "contract-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "合同管理系统",
+          "财务系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "合同到期续约评估",
+      "type": "agent",
+      "prompt": "合同到期前60天启动续约/终止评估流程：1）通知业务部门和法务对接人；2）收集评估信息——业务需求持续性、对方履约表现评分、当前市场条件对比、交易对手信用变化、法规变化影响；3）基于评估信息形成建议（续约/调整续约/终止）及理由；4）如建议续约→确定需要调整的条款，触发新一轮合同起草流程；5）如建议终止→确认终止通知时限要求，处理尾款结算和资料退还，确保保密条款存续，设置归档保存期限（终止后10年）。在到期前30天完成决定。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "contract-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "合同管理系统"
+        ]
+      },
+      "position": {
+        "x": 4300,
+        "y": 100
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-2",
+      "target": "task-4"
+    },
+    {
+      "source": "task-3",
+      "target": "task-5"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-5b"
+    },
+    {
+      "source": "task-5b",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-5b",
+      "target": "task-8"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "contractRequirement",
+      "value": "",
+      "description": "业务部门提交的合同需求信息，包含交易对手、标的、金额、期限等交易要素",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-2",
+      "name": "contractType",
+      "value": "",
+      "description": "合同类型分类结果：standard(标准合同)或non-standard(非标合同)",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "contractAmount",
+      "value": "",
+      "description": "合同金额（单位：万元人民币），用于确定审批层级和条款严格度",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-4",
+      "name": "contractDraft",
+      "value": "",
+      "description": "生成的合同初稿文本内容",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "reviewResult",
+      "value": "",
+      "description": "条款审查结果，包含逐条审查意见、风险标注和修改建议",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-6",
+      "name": "riskGrade",
+      "value": "",
+      "description": "合同综合风险评级：A(低风险)/B(较低风险)/C(中等风险)/D(高风险)",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "approvalLevel",
+      "value": "",
+      "description": "确定的审批层级：business_manager/legal_review/legal_director",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "legalOpinion",
+      "value": "",
+      "description": "风控评估师出具的正式法律意见书内容",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-9",
+      "name": "counterpartyInfo",
+      "value": "",
+      "description": "交易对手信息，包含企业名称、信用代码、信用评级、诉讼记录等",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-10",
+      "name": "contractId",
+      "value": "",
+      "description": "合同唯一编号，用于全生命周期追踪",
+      "required": true,
+      "variableType": "string"
+    }
+  ]
+}

@@ -1,0 +1,625 @@
+{
+  "title": "客户成功全生命周期管理工作流",
+  "description": "覆盖从签约交接、实施上线、健康度监控、续约管理到增购拓展的客户全生命周期管理流程，确保客户价值持续交付和收入持续增长",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "接收签约完成通知",
+      "type": "action",
+      "prompt": "监听并接收来自报价与合同Scope的签约完成通知，提取合同关键信息（客户名称、合同金额、产品模块、签约日期、销售负责人），在CRM系统中创建客户交接任务工单，设置5个工作日完成期限，并通知相关CSM准备交接。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "onboarding-orchestrator",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "CRM系统",
+          "合同管理系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "收集并校验交接信息",
+      "type": "agent",
+      "prompt": "从销售团队收集客户交接信息，确保五大模块（客户背景、商务条件、期望与承诺、决策人信息、技术环境）完整度达到90%以上。对缺失信息进行标记并退回销售补充，设置24小时补全期限。生成交接信息完整性校验报告。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-orchestrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "判断交接信息是否完整",
+      "type": "agent",
+      "prompt": "检查交接文档五大模块的完整度：客户背景、商务条件、期望承诺、决策人信息、技术环境。如果完整度≥90%，流转到交接会议安排；如果完整度<90%，退回销售团队要求补充，并设置催促提醒。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-orchestrator",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "组织并执行交接会议",
+      "type": "agent",
+      "prompt": "安排销售AE、CSM和CSM经理三方交接会议。会议议程包括：客户背景介绍、商务条件确认、承诺事项逐条确认、技术需求讨论、责任交接确认。会议时长控制在30-60分钟。会后生成交接会议纪要，由销售和CSM双方签字确认。正式向客户发送CSM欢迎邮件。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-orchestrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "日历系统",
+          "邮件系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "制定实施计划与TTV目标",
+      "type": "agent",
+      "prompt": "基于交接信息制定客户实施计划：定义30天Time-to-Value目标和Success Criteria，分解实施里程碑（环境准备→配置部署→数据迁移→集成测试→用户培训→上线验收），明确每个里程碑的负责人、时间节点和验收标准。识别Top 3实施风险并制定应对方案。设计快速见效路径，选择最能解决客户Top 1痛点的功能模块优先实施。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-orchestrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "项目管理系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "追踪实施进度与风险管理",
+      "type": "agent",
+      "prompt": "每周追踪实施项目进度，更新项目看板状态（Doing/Done/Blocked）。识别新增风险（客户资源不到位、技术集成问题、需求变更等）并制定应对措施。生成每周进度报告，包含里程碑完成率、风险状态、下周计划。对延期超过1周的任务自动预警并触发资源协调。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-orchestrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "项目管理系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "判断实施是否按计划推进",
+      "type": "agent",
+      "prompt": "评估当前实施进度是否符合计划：如果各里程碑按时完成，流转到上线验收步骤；如果出现延期超过1周或客户方提出需求变更，触发异常处理流程（调整计划/增加资源/管理客户预期/评估补充协议需求）。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-orchestrator",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "执行上线验收与TTV确认",
+      "type": "agent",
+      "prompt": "组织UAT用户验收测试，收集测试问题并推动修复。客户签署上线验收单后，验证Time-to-Value目标是否达成——客户核心业务场景是否在产品中成功运行。制作价值验证报告（Before/After对比数据），制定上线后2周加强支持计划。将客户信息和实施状态传递给客户健康度管理师建立初始健康度基线。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-orchestrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "项目管理系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "建立客户健康度基线",
+      "type": "agent",
+      "prompt": "接收新上线客户的基础信息和实施状态，建立客户健康度评分基线。采集初始数据：产品使用率（上线首月登录频率、功能覆盖度）、支持体验（上线期工单情况）、商务关系（付款状态、对接人确认）。产出首次健康度评分，通常新客户上线后首月默认为绿色观察期。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "health-score-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "产品分析系统",
+          "工单系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "执行月度健康度评分更新",
+      "type": "agent",
+      "prompt": "每月对所有活跃客户执行健康度评分更新，覆盖率必须达到100%。综合评估四大维度：产品使用（权重35%，含登录频率、功能覆盖度、活跃用户占比）、支持体验（权重25%，含工单趋势、CSAT评分）、商务关系（权重25%，含付款及时性、沟通频率、关键人变动）、满意度（权重15%，含NPS分数和趋势）。产出全客户健康度评分报告和颜色分级变化汇总。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "health-score-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "产品分析系统",
+          "工单系统",
+          "财务系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "判断客户健康度颜色等级",
+      "type": "agent",
+      "prompt": "根据月度健康度评分结果进行分级路由：绿色客户（≥70分）进入常规管理和增购机会关注流程；黄色客户（50-69分）进入关注计划制定流程，增加touchpoint频率至双周；红色客户（<50分）立即触发48小时挽回计划制定流程。同时检查是否有客户颜色从绿色快速下滑至黄色（即使未到红色也需特别关注）。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "health-score-manager",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "制定红色客户挽回计划",
+      "type": "agent",
+      "prompt": "对红色客户在48小时内制定完整挽回计划。步骤：1)确认风险信号真实性，排除数据异常；2)分析根因类别（产品/服务/价格/竞品/业务变化）；3)制定行动计划（含具体行动项、负责人、时间线、成功标准）；4)评估是否需要高层互访；5)准备客户挽留资源包。提交CSM经理审批。设定2周后首次复评时间点。通知续约增购策略师关注续约风险。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "health-score-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "执行续约风险评估",
+      "type": "agent",
+      "prompt": "在合同到期前90天（T-90）启动续约风险评估。综合评估五大维度：使用价值（权重30%，产品使用深度和依赖程度）、关系稳定（权重25%，Champion状态和高层关系）、商务健康（权重20%，付款习惯和价格敏感度）、竞品威胁（权重15%，是否有竞品接触信号）、合同条款（权重10%，涨价条款和自动续约条件）。产出续约风险等级（高/中/低）和续约概率预估，确定续约策略方向（标准续约/优惠续约/升级续约）。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "renewal-expansion-strategist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "产品分析系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "制定续约提案并发送",
+      "type": "agent",
+      "prompt": "在T-60天制定并发送续约提案。提案包含：合作价值回顾（用数据展示过去一年的ROI和业务成果）、续约方案明细（产品、服务、价格、期限）、新增价值亮点（产品路线图中与客户相关的新功能）、优惠条件及其前提。对于高风险客户准备A/B/C三个方案选项。提案需经CSM经理审批后发送客户，并安排续约沟通会议。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "renewal-expansion-strategist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "文档系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "判断续约谈判进展",
+      "type": "agent",
+      "prompt": "评估续约谈判进展状态：如果客户接受提案进入签署流程；如果客户有异议需要调整方案（价格/范围/条款）则进入异议处理环节；如果客户表达不续约意向则立即触发升级挽留流程（24小时内CSM经理介入，必要时VP沟通）；如果T-30天仍未达成一致则自动升级至CSM总监。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "renewal-expansion-strategist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "推动续约签署完成",
+      "type": "agent",
+      "prompt": "在T-30天内推动续约合同签署完成。具体动作：确认最终续约条件双方一致，触发合同生成流程（可能需要协调报价与合同Scope），处理合同条款细节，推动电子签署。签署完成后更新CRM系统续约状态，将续约结果数据同步给销售数据分析Scope。如逾期未签署则启动逾期管理流程（每日催促→T+15暂停预警→T+30合同处理）。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "renewal-expansion-strategist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "合同管理系统",
+          "电子签署系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "识别并验证增购机会",
+      "type": "agent",
+      "prompt": "持续监控增购信号并进行机会验证。监控信号包括：License使用率>80%（扩容信号）、频繁触达功能上限（升级信号）、客户组织扩张（公开信息+客户沟通）、QBR中表达的新需求。对识别的信号用BANT框架验证：预算、权限、需求真实性、时间紧迫性。评估增购金额并决定路由：≤年合同额50%由CSM直接推进，>50%转交销售团队。产出增购机会pipeline月度报告。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "renewal-expansion-strategist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "产品分析系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "规划客户互动节奏",
+      "type": "agent",
+      "prompt": "为CSM管理的客户组合制定差异化互动节奏计划。按客户分层设定标准：Tier 1（ARR>100万）月度check-in+季度QBR+半年高层互访；Tier 2（ARR 30-100万）月度check-in+半年度QBR；Tier 3（ARR<30万）双月check-in+年度review。根据健康度颜色动态调整频率（黄色加密至双周，红色视挽回计划执行）。生成月度互动日历并平衡CSM工作负载。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "customer-engagement-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "日历系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "准备并执行QBR",
+      "type": "agent",
+      "prompt": "提前2周启动QBR准备。采集数据：本季度使用数据（登录、功能使用、活跃用户）、价值量化指标（效率提升、成本节省）、服务记录（工单和满意度）。制作QBR PPT：执行摘要→价值交付回顾→服务回顾→上季度行动项闭环→下季度规划→行业洞察→讨论议题。经CSM经理审核后执行QBR会议（60-90分钟），记录客户反馈和新需求，会后24小时内发送纪要和action item。将发现的机会信号传递给续约增购策略师。",
+      "dependentTasks": [
+        "task-18"
+      ],
+      "metadata": {
+        "agentRef": "customer-engagement-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "产品分析系统",
+          "CRM系统",
+          "文档系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-20",
+      "title": "执行NPS满意度调查",
+      "type": "agent",
+      "prompt": "每半年执行一次全量NPS调查。设计简短问卷（核心NPS问题+开放式追问，完成时间<2分钟）。按客户Tier分层发送：Tier 1由CSM个人发送并电话提醒，Tier 2由CSM邮件发送，Tier 3系统自动发送。回收后计算NPS分数，多维度分析（按规模/行业/CSM/产品线），识别Detractor并安排48小时内CSM经理回访。将NPS结果同步给健康度管理师更新评分模型。汇总产品反馈传递给产品团队。向客户发送'您的反馈我们如何行动'的闭环通知。",
+      "dependentTasks": [
+        "task-18"
+      ],
+      "metadata": {
+        "agentRef": "customer-engagement-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "调研工具",
+          "邮件系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-21",
+      "title": "处理客户投诉升级",
+      "type": "agent",
+      "prompt": "接收并处理客户投诉升级事件。2小时内响应投诉，了解问题详情和客户情绪。4小时内协调内部资源（产品/技术/服务）给出初步解决方案或明确处理时间线。跟踪问题解决进展直到客户确认满意。记录完整的投诉处理过程（问题描述、影响范围、处理方案、预防措施）。严重投诉需通知CSM经理和健康度管理师评估对健康度的影响。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "customer-engagement-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "工单系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-22",
+      "title": "执行流失客户复盘",
+      "type": "document",
+      "prompt": "对每个确认流失的客户在10个工作日内完成根因分析复盘。复盘内容：客户基础信息、流失时间线（从健康到流失的关键事件）、根因分析（产品/服务/价格/竞品/业务变化）、预警信号回顾（哪些信号被忽略）、可改进措施、系统性建议。将复盘结果纳入月度流失分析会讨论，识别系统性问题并推动组织层面改进。更新流失预测模型参数。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "health-score-manager",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 400
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-10",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-10",
+      "target": "task-17"
+    },
+    {
+      "source": "task-10",
+      "target": "task-18"
+    },
+    {
+      "source": "task-18",
+      "target": "task-19"
+    },
+    {
+      "source": "task-18",
+      "target": "task-20"
+    },
+    {
+      "source": "task-9",
+      "target": "task-21"
+    },
+    {
+      "source": "task-9",
+      "target": "task-22"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "contractId",
+      "value": "",
+      "description": "合同唯一标识ID，用于关联客户和合同信息",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "customerName",
+      "value": "",
+      "description": "客户公司全称",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "annualContractValue",
+      "value": "",
+      "description": "年合同金额（元），用于客户分层和增购阈值判断",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-4",
+      "name": "contractExpiryDate",
+      "value": "",
+      "description": "合同到期日期，用于计算续约时间线（T-90/T-60/T-30）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "customerTier",
+      "value": "",
+      "description": "客户分层等级（Tier1/Tier2/Tier3），决定互动频率和资源配置",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "healthScoreColor",
+      "value": "",
+      "description": "客户当前健康度颜色（绿色/黄色/红色），触发不同干预策略",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "assignedCsm",
+      "value": "",
+      "description": "指派的客户成功经理姓名",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "productModules",
+      "value": "",
+      "description": "客户购买的产品模块列表（JSON格式），用于使用率分析和增购推荐",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-9",
+      "name": "renewalRiskLevel",
+      "value": "",
+      "description": "续约风险等级（高/中/低），决定续约策略和资源投入",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-10",
+      "name": "npsScore",
+      "value": "",
+      "description": "客户最近一次NPS评分，作为健康度和续约判断的输入",
+      "required": false,
+      "variableType": "number"
+    }
+  ]
+}

@@ -1,0 +1,502 @@
+{
+  "title": "培训与发展全流程工作流",
+  "description": "涵盖年度培训规划、课程开发与采购、培训实施执行、柯氏四级效果评估、学时监控和管理岗晋升必修课程认证管理的端到端培训工作流",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "汇总多维度培训需求",
+      "type": "agent",
+      "prompt": "启动培训需求收集流程。从以下三个维度系统化收集培训需求：1）组织层面：分析公司年度战略目标和业务规划，识别实现战略目标所需的关键能力建设方向；2）任务层面：对照各岗位胜任力模型，评估当前员工能力与岗位要求的差距；3）人员层面：汇总绩效评估中的能力差距数据、360度反馈中的共性短板、员工个人发展计划中的培训诉求。对每个部门进行至少一次深度访谈，确保需求覆盖全面。输出结构化的培训需求清单，包含需求描述、来源维度、影响人群、紧急程度和战略关联度。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "training-needs-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "人力资源信息系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "需求优先级排序与分析",
+      "type": "agent",
+      "prompt": "对收集到的培训需求进行优先级排序和可行性分析。使用优先级矩阵（紧急度×影响面×战略关联度）对每项需求进行评分和排序。关键判断：1）区分'培训能解决'和'非培训能解决'的问题（流程问题、制度问题、激励问题不应归为培训需求）；2）识别重叠需求（同时出现在多个维度的需求优先级最高）；3）评估资源可行性（内部讲师是否可覆盖、是否需要外部采购）。输出包含优先级排序的最终需求清单，并对排除的伪需求说明排除原因和替代解决建议。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "training-needs-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "制定年度培训计划和预算",
+      "type": "agent",
+      "prompt": "基于优先级排序后的需求清单，制定完整的年度培训计划和预算分配方案。计划需包含：1）课程体系架构（分层分类的课程清单，标注必修/选修、内部开发/外部采购）；2）培训日历（避开业务高峰期，确保全员可参加必修课程）；3）资源配置（讲师分配、场地需求、平台需求）；4）预算方案（总额不超过人力成本2-3%，按类型和科目分配）。确保计划覆盖全员年度≥40学时的硬性要求，管理岗必修领导力课程已安排。留出5-10%预算储备金应对临时需求。12月底前完成初稿。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "training-needs-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "财务系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "年度计划审批决策",
+      "type": "agent",
+      "prompt": "HR总监审批年度培训计划和预算方案。审批维度包括：1）预算合理性（是否在人力成本2-3%范围内）；2）战略对齐度（培训重点是否支撑业务战略）；3）覆盖完整性（全员学时要求是否可满足、管理岗必修是否安排）。审批结果：通过则进入执行，预算超标则需削减低优先级项目重新提报。审批截止日为次年1月15日。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "training-needs-analyst",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "审批系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "课程开发方式决策与执行",
+      "type": "agent",
+      "prompt": "根据审批通过的年度培训计划，逐项执行课程开发或采购决策。决策规则：1）核心能力和企业特有知识（如企业文化、内部流程、业务方法论）→ 内部开发，利用ADDIE模型设计课程，6周内完成从立项到上线；2）通用管理和技术技能（如办公软件、项目管理通用方法）→ 外部采购，4周内完成供应商选型和签约；3）高端领导力发展课程 → 外部专家+内部案例定制。每门课程确定开发/采购计划后形成详细的项目进度表。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "course-delivery-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "供应商管理系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "内部讲师资源配置",
+      "type": "agent",
+      "prompt": "根据课程开发计划配置内部讲师资源。执行以下步骤：1）盘点现有讲师资源池（专长领域、等级、可用时间）；2）将课程授课需求与讲师专长进行匹配分配；3）识别讲师缺口——需要选拔新讲师的领域；4）为新讲师安排TTT培训提升授课能力；5）协调讲师本职工作与授课时间（每位讲师季度授课不超过工作时间15%）；6）确认讲师激励方案（授课时长折算绩效加分）。输出讲师授课排期表和讲师培养计划。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "course-delivery-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "人力资源信息系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "课程内容评审",
+      "type": "agent",
+      "prompt": "对所有新开发或新采购的课程执行上线前内容评审。评审必须通过三个维度：1）准确性评审——由对应业务领域的SME确认课程内容的正确性、时效性、完整性；2）实用性评审——安排目标学员代表进行试听/试用，确认内容贴近实际工作场景，案例真实有效；3）合规性评审——确认不含违规信息（数据安全、知识产权、保密要求等）。评审不通过的课程明确修改要求返回修改，7天内完成复审。管理岗必修课程的评审需HR总监参与。记录评审结论和通过日期。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "course-delivery-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1600,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "培训通知发布与报名管理",
+      "type": "agent",
+      "prompt": "在每次培训开始前T-7天发布培训通知并管理报名。通知内容包括：培训主题和简介、学习目标（这次培训对学员有什么价值）、时间地点、参训对象、课前准备要求。开放报名通道后监控报名情况：1）人数不足（低于最低开班人数）→ 调整时间或扩大参训范围或部门负责人督促必修课参加；2）人数正常 → 确认开班；3）人数超额 → 按业务优先级和能力差距程度筛选，或增加班次。T-5天截止报名，确认最终参训名单。T-3天分发培训资料。T-1天发送培训提醒。",
+      "dependentTasks": [
+        "task-6",
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "course-delivery-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "学习管理系统",
+          "企业通讯系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "报名人数异常处理",
+      "type": "agent",
+      "prompt": "判断培训报名人数是否满足开班条件。条件评估：出勤率预估≥90%为有效开班。如果报名人数不足最低开班要求：选择调整培训时间、扩大参训范围、或与部门负责人沟通督促参加（必修课程）。如果报名人数超过培训容量：按业务优先级筛选参训人员，或协调增加班次。评估完成后确认最终开班决定。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "course-delivery-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "培训现场执行与管理",
+      "type": "agent",
+      "prompt": "执行培训现场的全流程管理。关键执行步骤：1）提前30分钟到达培训场地，完成设备调试（投影、音响、网络、录像设备）和场地布置；2）执行学员签到，记录出勤情况；3）确认出勤率≥90%后正式开班（低于90%需评估是否继续或安排补课）；4）全程提供现场支持——处理设备故障、管理课堂节奏、安排茶歇和午餐后勤；5）处理突发情况（讲师迟到启动备案、学员中途离开记录原因）；6）培训结束时协助组织即时评估。确保培训签到表、现场照片等资料完整存档。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "course-delivery-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "学习管理系统"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "Level 1和Level 2即时评估",
+      "type": "agent",
+      "prompt": "在培训结束当天执行Level 1反应层评估和Level 2学习层评估。Level 1：发放培训满意度问卷，覆盖课程内容相关性、讲师专业度和表现力、教学方法有效性、培训组织和后勤、学习意愿提升度等5-7个维度，回收率要求≥95%，48小时内完成统计分析，目标评分≥4.2/5.0。Level 2：根据课程类型组织适当的学习评估（知识类用笔试、技能类用实操考核、态度类用情景判断），目标通过率≥85%，未通过者记录并安排补学机会。评分低于3.5的维度和知识点薄弱环节整理为改进重点反馈给课程开发方。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "training-effectiveness-evaluator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "学习管理系统",
+          "问卷系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "Level 3行为层评估",
+      "type": "agent",
+      "prompt": "在培训结束后1-3个月执行Level 3行为层评估，评估学员是否将所学知识技能应用到实际工作中。执行步骤：1）确定评估抽样名单（覆盖≥30%参训人员，兼顾不同部门和岗位）；2）设计结构化访谈提纲（针对该培训的预期行为变化设计观察指标）；3）对学员直属上级进行结构化访谈，收集行为变化的具体证据；4）收集工作成果/产出的对比数据（训前vs训后）；5）统计行为改变率（目标≥60%）。对行为未变化的情况进行原因分析：学习未消化→安排复训/辅导；工作环境不支持转化→向管理层建议环境改善；培训内容不实用→反馈课程改进需求。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "training-effectiveness-evaluator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "人力资源信息系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "行为转化异常干预决策",
+      "type": "agent",
+      "prompt": "评估Level 3行为评估结果，判断是否需要启动干预措施。如果行为改变率≥60%：培训效果达标，进入Level 4评估（如该项目为重点项目）。如果行为改变率<60%：深入分析原因类型——学习内容未消化（安排复训或一对一辅导）、工作环境不支持转化（向部门管理层提出环境改善建议，如流程调整、工具支持）、培训内容与实际工作脱节（反馈给课程开发专员进行内容优化）。确定具体干预措施和执行时间表。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "training-effectiveness-evaluator",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "Level 4结果层ROI评估",
+      "type": "agent",
+      "prompt": "对重点培训项目（每年至少3个）执行Level 4结果层评估，分析培训对业务绩效的实际影响和投资回报率。在训后3-6个月执行。步骤：1）确定与培训目标直接相关的业务指标（生产效率、客户满意度、收入增长、成本降低、离职率等）；2）收集培训前后该指标的对比数据；3）隔离培训效果——排除其他变量的影响（使用控制组对比法、趋势线分析法或专家估算法）；4）计算培训总成本（直接成本+学员时间机会成本）；5）计算ROI = (培训带来的收益 - 培训总成本) / 培训总成本 × 100%；6）编制ROI分析报告，包含数据来源、计算方法、保守估计和结论建议。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "training-effectiveness-evaluator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "业务数据系统",
+          "财务系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "评估结果反馈与持续优化",
+      "type": "agent",
+      "prompt": "将培训效果评估的结果形成闭环反馈，推动培训体系持续优化。执行以下反馈动作：1）课程质量问题（满意度低、知识点薄弱）→ 形成课程改进建议清单，反馈给课程开发与实施专员执行修改；2）需求定位问题（培训内容与实际工作脱节、学员对象选错）→ 反馈给培训需求分析师优化需求诊断方法；3）讲师质量问题（讲师评分低于4.0）→ 通知讲师管理方安排改进辅导；4）转化环境问题 → 编制管理层沟通报告，建议创造利于学习转化的工作环境。汇总年度所有评估数据，编制年度培训效果白皮书。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "training-effectiveness-evaluator",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "季度学时监控与干预",
+      "type": "agent",
+      "prompt": "每季度末执行全员培训学时完成进度检查和干预。具体步骤：1）统计全员当前累计培训学时（按人、按部门汇总）；2）计算季度目标完成率（Q1目标10学时、Q2目标20学时、Q3目标30学时、Q4目标40学时）；3）识别学时落后人员（当前进度低于季度目标的80%）；4）对落后人员推送个性化学习提醒，推荐即将开班的课程或可选的线上课程；5）严重落后者（进度<50%）上报部门负责人；6）生成季度学时进度通报发送至部门负责人和HR总监；7）年末12月15日进行最终达标检查，未达标（<40学时）人员名单报HR总监，纳入绩效考核扣分项。年度培训学时达标率目标≥95%。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "course-delivery-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "学习管理系统",
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "管理岗晋升必修课程认证检查",
+      "type": "agent",
+      "prompt": "当管理岗晋升申请提交或潜在晋升候选人名单确定时，自动执行必修课程完成情况检查。步骤：1）接收晋升候选人信息（姓名、当前岗位、目标管理岗级别）；2）查询该管理岗级别对应的必修课程清单（M1：团队管理基础+绩效管理实务+劳动法基础；M2：战略规划+跨部门协作+人才梯队建设；M3+：变革管理+组织设计+领导力进阶）；3）核查候选人的课程完成记录和认证状态；4）判定结果：全部完成→出具认证确认文件，放行进入晋升评审；未完成→列出未完成课程清单，推送30天内的必修课程安排，通知候选人和其直属上级晋升评审将延期。认证状态变更后24小时内同步给绩效管理模块。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "training-effectiveness-evaluator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "学习管理系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "人才发展路径更新与跟踪",
+      "type": "agent",
+      "prompt": "维护和更新员工的能力发展档案和学习路径进度。执行以下工作：1）每次培训完成后更新员工的能力发展档案（新增培训记录、认证状态、学习积分）；2）对照岗位序列能力模型，更新各维度能力达标状态；3）生成个人能力雷达图（当前水平vs目标岗位要求的差距可视化）；4）为有明确晋升目标的员工生成发展路径进度报告（已达标条件/进行中/未开始）；5）识别高潜人才的发展加速机会（能力达标率高且绩效优秀者）；6）将发展数据为人才盘点和IDP制定提供输入。输出包括个人发展报告和团队人才发展仪表盘。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "training-effectiveness-evaluator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "人力资源信息系统",
+          "学习管理系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-5",
+      "target": "task-7"
+    },
+    {
+      "source": "task-6",
+      "target": "task-8"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-10",
+      "target": "task-16"
+    },
+    {
+      "source": "task-4",
+      "target": "task-17"
+    },
+    {
+      "source": "task-11",
+      "target": "task-18"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "annualTrainingBudget",
+      "value": "",
+      "description": "年度培训预算总额（元），通常为人力成本总额的2-3%",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-2",
+      "name": "totalHeadcount",
+      "value": "",
+      "description": "公司总员工人数，用于计算人均学时和预算",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-3",
+      "name": "strategicPriorities",
+      "value": "",
+      "description": "年度战略重点方向（如数字化转型、国际化等），影响培训需求优先级",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "performanceGapData",
+      "value": "",
+      "description": "来自绩效管理模块的能力差距数据汇总，作为培训需求的核心输入",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "promotionCandidateList",
+      "value": "",
+      "description": "管理岗晋升候选人名单，触发必修课程认证检查",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "currentQuarter",
+      "value": "",
+      "description": "当前所在季度（Q1/Q2/Q3/Q4），影响学时监控目标和计划节奏",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "internalInstructorPool",
+      "value": "",
+      "description": "内部讲师资源池信息（专长、等级、可用时间），用于授课分配",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "lmsTrainingRecords",
+      "value": "",
+      "description": "学习管理系统中的培训完成记录和学时数据",
+      "required": true,
+      "variableType": "string"
+    }
+  ]
+}

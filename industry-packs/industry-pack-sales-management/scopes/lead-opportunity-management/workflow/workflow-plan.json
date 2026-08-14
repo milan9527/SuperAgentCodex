@@ -1,0 +1,533 @@
+{
+  "title": "线索与商机管理全流程",
+  "description": "覆盖从多渠道线索采集、清洗去重、BANT评分、智能分配、SDR跟进、SQL转化判定到商机阶段推进的完整销售前端工作流。确保线索快速响应（4小时SLA）、精准分配、高效转化（MQL→SQL>20%），并保证商机推进的流程合规性。",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "多渠道线索采集与标准化",
+      "type": "agent",
+      "prompt": "监控所有已配置的线索入口渠道（官网表单、内容营销平台、Webinar系统、展会接口、合作伙伴API），实时采集新产生的线索数据。将原始数据映射为标准字段格式：company_name, contact_name, title, phone, email, source_channel, intent_product。验证必填字段完整性，对缺少公司名和联系方式的数据拒绝入库并反馈渠道方。输出标准化的线索数据列表及处理时间戳。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "lead-intake-processor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "官网表单系统",
+          "营销自动化平台",
+          "展会管理系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "线索去重检测与合并",
+      "type": "agent",
+      "prompt": "对标准化后的线索执行三重去重检测：1）邮箱精确匹配；2）公司名相似度>85%且手机号后8位一致的模糊匹配；3）跨渠道同一联系人行为合并。对完全重复的记录执行合并操作（保留最新互动时间，合并来源渠道标签）；对疑似重复记录（相似度85-95%）标记人工复核队列不自动处理；对确认的新增线索放行继续后续流程。输出去重处理结果报告，包含：合并数量、疑似重复数量、新增数量、去重准确率。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "lead-intake-processor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "企业工商数据补全",
+      "type": "agent",
+      "prompt": "对通过去重检测的新增线索，基于公司名称调用工商信息API进行数据补全。需补全字段包括：行业分类（国标代码）、员工规模区间、注册资本、融资阶段、成立日期、经营范围。补全结果需标注数据来源和获取时间。对于API调用失败的记录标记为'待补全'状态，不阻塞后续评分流程（使用可用信息进行评分，标注置信度较低）。计算并输出批次数据补全率（目标>85%）。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "lead-intake-processor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "工商信息API",
+          "企业征信平台"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "BANT模型自动评分",
+      "type": "agent",
+      "prompt": "基于线索的标准化数据和补全信息，按BANT模型进行0-100分自动评分。Budget维度（0-25分）：基于企业规模、融资阶段、行为信号判断预算能力；Authority维度（0-25分）：基于联系人职位层级判断决策权；Need维度（0-25分）：基于互动行为（下载内容类型、访问页面）判断需求明确度；Timeline维度（0-25分）：基于行为紧迫度信号判断时间线。每个维度必须记录评分依据。输出各线索的评分卡（含总分、各维度得分、评分依据、置信度标注）。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "lead-intake-processor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "行为追踪系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "线索分级决策",
+      "type": "agent",
+      "prompt": "根据BANT评分结果对线索进行分级路由：评分≥60分的线索标记为MQL（Marketing Qualified Lead），进入智能分配流程；评分30-59分的线索标记为Nurture，进入培育序列；评分<30分的线索标记为Low Quality，记录渠道质量数据反馈给营销团队。对于MQL线索额外检查是否为VIP标记（战略客户/大额潜力），如是则标记优先级为VIP。输出分级结果和各级别数量统计。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "lead-intake-processor",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "MQL智能分配匹配",
+      "type": "agent",
+      "prompt": "对进入MQL队列的线索执行智能分配：1）提取线索的行业属性、地理区域、公司规模、产品意向等维度特征；2）加载可用SDR的能力模型（行业专长、区域覆盖、产品认证、历史赢率）和当前负载数据；3）执行多维匹配算法计算匹配得分（行业30%+区域25%+产品20%+负载15%+赢率10%）；4）选择最优SDR执行分配。对于VIP线索优先分配给高赢率SDR。分配决策必须附带理由说明。分配完成后立即启动4小时首次触达SLA计时器。输出分配结果记录和SLA启动确认。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "lead-routing-dispatcher",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "SDR工作台"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "SLA实时监控与预警",
+      "type": "agent",
+      "prompt": "对所有已分配待跟进的MQL线索执行SLA实时监控：每15分钟扫描一次监控队列，检查线索是否已记录首次触达。对剩余1小时的线索发送黄色预警给SDR；剩余30分钟发送橙色预警给SDR和主管；已超时发送红色预警给销售经理并标记违规。对超时2小时仍无响应的线索自动触发回收重分配流程。同时监控SDR 48小时跟进节奏，无后续跟进的线索发送回收预警（给予4小时缓冲）。每日生成SLA达标率报告。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "lead-routing-dispatcher",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "消息通知系统",
+          "企业微信"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "个性化触达话术生成",
+      "type": "agent",
+      "prompt": "为分配到SDR的每条MQL线索生成个性化的多渠道触达话术。基于线索的行业特征、联系人职位层级、行为信号（下载了什么内容/参加了什么活动）和痛点假设，生成：1）电话开场白（30秒版本，含自我介绍+连接点+价值钩子+开放式提问）；2）邮件模板（个性化主题行+价值主张+社会证明+轻量CTA）；3）微信消息（简短友好+即时价值提供）。同时准备异议处理预案（针对'已有供应商'、'暂时不需要'、'没有预算'等常见拒绝）。话术必须真实、专业、不夸大承诺。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "sdr-engagement-coach",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "内容资产库",
+          "竞品情报库"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "SDR跟进执行与记录",
+      "type": "agent",
+      "prompt": "指导和监控SDR的线索跟进执行过程：跟踪每条MQL线索的触达情况，确保按照规定节奏执行跟进序列（首次触达后每24-48小时进行后续跟进）。对每次沟通记录进行质量检查——必须包含客户反馈摘要和明确的下一步计划。对于3次电话未接通的线索，指导SDR转为邮件+微信策略；对于7天内邮件+微信均无响应的线索，建议回收到nurture pool。对于客户明确拒绝的线索，记录拒绝原因并标记Lost（设6个月冷却期）。统计SDR有效沟通次数，达到3次后触发SQL评估。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "sdr-engagement-coach",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "电话系统",
+          "邮件系统",
+          "企业微信"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "SDR跟进结果判定",
+      "type": "agent",
+      "prompt": "根据SDR跟进结果进行路由决策：1）累计有效沟通≥3次 → 进入SQL资质评估流程；2）3次电话未接通且邮件微信7天无响应 → 回收到nurture pool；3）客户明确拒绝 → 标记Lost，记录原因，设置6个月冷却期后可重新激活；4）有效沟通中但未达3次 → 继续跟进序列。判断有效沟通标准：双向交流超过2分钟，获取到新的BANT相关信息。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "sdr-engagement-coach",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "SQL资质综合评估",
+      "type": "agent",
+      "prompt": "在SDR完成3次有效沟通后，执行SQL（Sales Qualified Lead）资质综合评估。汇总全部沟通记录，基于BANT标准进行深度评估：Budget-客户是否有明确预算且与产品定价匹配；Authority-是否已识别关键决策人及决策流程；Need-是否有明确且与产品匹配的业务痛点；Timeline-是否有明确的采购时间计划。每维度基于客户明确表达（非SDR推断）的信息进行评估。判定标准：≥3维度正面→SQL合格；2维度正面→条件SQL；<2维度正面→暂不合格转nurture。输出SQL评估报告卡（含各维度评估详情和判定理由）。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "sdr-engagement-coach",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "SQL判定结果路由",
+      "type": "agent",
+      "prompt": "根据SQL评估结果进行流程路由：1）SQL合格（≥3维度正面）→ 进入商机创建流程，填写完整商机信息；2）条件SQL（2维度正面）→ 创建早期阶段商机，标注需进一步验证的维度；3）暂不合格（<2维度正面但有长期价值）→ 制定nurture培育计划，设置定期复评提醒；4）无效（明确无机会）→ 标记关闭，记录原因，6个月冷却期。确保每个判定都有明确的依据记录。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "sdr-engagement-coach",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "Nurture培育计划制定",
+      "type": "agent",
+      "prompt": "对进入Nurture Pool的线索（评分30-59分或SQL暂不合格）制定系统性培育计划。根据线索价值和暂缓原因进行分层：A类（高价值/3月内可再评估）每2周主动触达+每月电话check-in；B类（中等/6月内）每月内容推送+每季度check-in；C类（低/6-12月）每月自动化邮件。基于BANT缺口定制内容策略：无预算→ROI案例；无时间线→行业趋势；决策人未触达→高管内容；需求不明→痛点诊断工具。设置明确的激活条件（行为触发/信号触发/时间触发）。输出完整的nurture计划文档。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "sdr-engagement-coach",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "营销自动化平台",
+          "内容管理系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "商机创建与信息校验",
+      "type": "agent",
+      "prompt": "对SQL合格的线索创建正式商机记录。确保必填字段100%完整：客户名称、预计成交金额、预计关闭日期、商机阶段（设为'初步接触'）、关键联系人信息。填写MEDDIC六要素中的至少3项（Metrics/Economic Buyer/Decision Criteria/Decision Process/Identify Pain/Champion）。生成初步赢单策略建议和下一步行动计划。将商机信息通知商机推进管理师开始阶段管理。同时将商机创建数据同步给销售数据分析Scope用于漏斗数据更新。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "opportunity-progression-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "商机阶段推进与合规校验",
+      "type": "agent",
+      "prompt": "对所有活跃商机执行持续的阶段推进管理：当销售请求推进商机阶段时，执行进入条件校验——需求确认→方案演示需有痛点文档和Decision Criteria；方案演示→报价谈判需有Economic Buyer接触记录和方案确认。校验通过则允许推进，未通过则阻塞并反馈需补充的信息。检测阶段跳跃行为（非相邻阶段推进），标记异常需销售经理审批。每日扫描全部活跃商机的停留时长，超过阶段平均时长1.5倍发黄色预警，2倍发红色预警，预警附带停滞原因分析和突破策略建议。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "opportunity-progression-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "Pipeline Review材料自动生成",
+      "type": "agent",
+      "prompt": "每周四自动生成下周Pipeline Review会议材料。内容包括：1）Executive Summary——Pipeline总额/加权额/Coverage比值/本周新增vs关闭；2）关键变化一览——阶段推进/金额变更/日期推迟/新增丢单；3）Top商机分析卡片——每单含进展摘要/风险评估/下一步action；4）风险预警列表——停滞商机/信息缺失商机/即将到期商机；5）预测影响分析——本周变化对季度预测的影响/Best Case vs Commit vs Most Likely更新；6）上周Action Items完成追踪。材料在会议前一天发送给全部参会者。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "opportunity-progression-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "BI系统",
+          "邮件系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "商机风险持续评估",
+      "type": "agent",
+      "prompt": "对所有活跃商机执行持续的风险评估，每周更新风险评分。评估五个维度：时间风险（停滞时长/日期推迟次数）、关系风险（Champion活跃度/决策链完整性/联系人变动）、竞争风险（竞品评估信号/价格压力）、需求风险（痛点紧迫度变化/预算信号/优先级调整）、流程风险（MEDDIC完整度/活动频率）。各维度0-5分，加权计算综合风险分。≤1.5绿色/1.5-3.0黄色/>3.0红色。每个高风险维度附带具体缓解行动建议。风险分连续两周上升的商机触发趋势恶化预警。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "opportunity-progression-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "竞品情报系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "商机交接至报价流程",
+      "type": "action",
+      "prompt": "当商机通过'方案演示'阶段的校验并准备进入'报价谈判'阶段时，执行跨Scope交接流程：1）确认商机已满足报价阶段进入条件（方案确认、Economic Buyer已接触、预算范围确认）；2）整理交接信息包（客户需求摘要、技术要求、商务边界条件、竞争态势、客户期望时间线）；3）触发报价与合同Scope的报价配置流程；4）记录交接时间和状态，确保流程连续性。交接完成后商机推进管理师继续监控商机状态，配合报价Scope完成后续阶段推进。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "opportunity-progression-manager",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "CRM系统",
+          "报价与合同Scope接口"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 400
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-6",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-12",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-15",
+      "target": "task-17"
+    },
+    {
+      "source": "task-15",
+      "target": "task-18"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "leadSource",
+      "value": "",
+      "description": "线索来源渠道标识（website_form/content_download/webinar/trade_show/partner/referral）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "bantScore",
+      "value": "",
+      "description": "BANT评分总分（0-100），决定线索分级路由",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-3",
+      "name": "leadGrade",
+      "value": "",
+      "description": "线索分级结果（MQL/Nurture/Low），决定后续流程路径",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "assignedSdrId",
+      "value": "",
+      "description": "被分配SDR的唯一标识符",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "slaDeadline",
+      "value": "",
+      "description": "4小时首次触达SLA截止时间（ISO 8601格式）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "effectiveCommunicationCount",
+      "value": "",
+      "description": "有效沟通累计次数（双向交流>2分钟），达到3次触发SQL评估",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-7",
+      "name": "sqlQualificationResult",
+      "value": "",
+      "description": "SQL资质评估结果（qualified/conditional/nurture/disqualified）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "opportunityId",
+      "value": "",
+      "description": "创建的商机唯一标识符",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-9",
+      "name": "opportunityStage",
+      "value": "",
+      "description": "商机当前阶段（initial_contact/need_confirmation/demo/negotiation/contract/won）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-10",
+      "name": "dealRiskLevel",
+      "value": "",
+      "description": "商机风险级别（green/yellow/red），基于多维风险评估",
+      "required": false,
+      "variableType": "string"
+    }
+  ]
+}

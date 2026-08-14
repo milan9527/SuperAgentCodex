@@ -1,0 +1,64 @@
+{
+  "title": "配置你的智能工单系统",
+  "description": "填写以下信息，AI Agent 将根据你的客服场景定制工单处理策略",
+  "variables": [
+    {
+      "key": "company_name",
+      "label": "公司/品牌名称",
+      "type": "text",
+      "required": true,
+      "placeholder": "例：美团"
+    },
+    {
+      "key": "product_type",
+      "label": "你的产品/服务类型",
+      "type": "text",
+      "required": true,
+      "placeholder": "例：电商平台、SaaS 软件、外卖配送"
+    },
+    {
+      "key": "common_issues",
+      "label": "最常见的客户问题类型",
+      "type": "textarea",
+      "required": true,
+      "placeholder": "例：退款退货、配送延迟、账号问题、功能咨询"
+    },
+    {
+      "key": "support_channels",
+      "label": "客服渠道",
+      "type": "multiselect",
+      "required": true,
+      "options": ["在线聊天", "电话", "邮件", "微信公众号", "App内反馈", "社交媒体"]
+    },
+    {
+      "key": "sla_target",
+      "label": "工单响应 SLA 目标",
+      "type": "select",
+      "required": false,
+      "options": ["5分钟内首次响应", "15分钟内首次响应", "30分钟内首次响应", "1小时内首次响应"]
+    },
+    {
+      "key": "daily_ticket_volume",
+      "label": "日均工单量",
+      "type": "select",
+      "required": false,
+      "options": ["< 50", "50-200", "200-1000", "1000-5000", "5000+"]
+    }
+  ],
+  "postDeployActions": [
+    {
+      "type": "inject_memory",
+      "title": "企业客服背景信息",
+      "category": "fact",
+      "is_pinned": true,
+      "template": "【企业信息】公司名称：{{company_name}}。产品类型：{{product_type}}。常见客户问题：{{common_issues}}。客服渠道：{{support_channels}}。SLA目标：{{sla_target}}。日均工单量：{{daily_ticket_volume}}。"
+    },
+    {
+      "type": "inject_memory",
+      "title": "工单处理策略定制",
+      "category": "decision",
+      "is_pinned": true,
+      "template": "基于{{company_name}}的{{product_type}}业务，工单处理策略：1）优先处理{{common_issues}}中的高频问题，建立标准化快速回复模板；2）{{support_channels}}多渠道统一归集，确保{{sla_target}}的SLA达标；3）日均{{daily_ticket_volume}}工单量下的资源分配和升级机制。"
+    }
+  ]
+}

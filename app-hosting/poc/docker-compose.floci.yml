@@ -1,0 +1,508 @@
+# =============================================================================
+# App Host POC — InsForge Multi-Tenant Architecture
+# =============================================================================
+# Each tenant gets a full InsForge instance (PG + PostgREST + App + Deno).
+# Each app within a tenant gets its own PG schema inside that tenant's InsForge.
+# Traefik routes requests to the correct tenant's InsForge based on Host header.
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Infrastructure
+  # ===========================================================================
+
+  # --- AWS Simulator (S3 + IAM) ---
+  floci:
+    image: hectorvent/floci:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - FLOCI_DEFAULT_REGION=us-east-1
+      - FLOCI_DEFAULT_ACCOUNT_ID=000000000000
+      - FLOCI_HOSTNAME=floci
+      - FLOCI_STORAGE_MODE=memory
+    volumes:
+      - floci-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # --- Traefik Ingress ---
+  traefik:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "8080:80"       # App access
+      - "8081:8080"     # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      floci:
+        condition: service_healthy
+
+  # --- App Host API (Control Plane) ---
+  app-host-api:
+    build:
+      context: ./services/app-host-api
+      dockerfile: Dockerfile
+    environment:
+      - PORT=3001
+      - DATABASE_URL=postgresql://apphost:apphost123@meta-db:5432/app_host_meta
+      - AWS_ENDPOINT_URL=http://floci:4566
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - ORCHESTRATOR=docker
+      # InsForge tenant endpoints (for provisioning schemas)
+      - INSFORGE_DUNHE_URL=http://insforge-alpha:7130
+      - INSFORGE_OTHERMEDIA_URL=http://insforge-beta:7130
+      - INSFORGE_TESTCORP_URL=http://insforge-gamma:7130
+    ports:
+      - "3001:3001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      meta-db:
+        condition: service_healthy
+      floci:
+        condition: service_healthy
+
+  # --- Control Plane Metadata DB ---
+  meta-db:
+    image: postgres:16-alpine
+    ports:
+      - "5436:5432"
+    environment:
+      POSTGRES_DB: app_host_meta
+      POSTGRES_USER: apphost
+      POSTGRES_PASSWORD: apphost123
+    volumes:
+      - meta-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apphost"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+
+  # ===========================================================================
+  # Tenant: Tenant A (alpha)
+  # InsForge instance = PG + PostgREST + InsForge App + Deno
+  # ===========================================================================
+
+  pg-alpha:
+    image: ghcr.io/insforge/postgres:v15.13.2
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c app.encryption_key='alpha-encryption-key-poc'
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=alpha_pg_poc_123
+      - POSTGRES_DB=insforge
+    volumes:
+      - pg-alpha-data:/var/lib/postgresql/data
+      - ./insforge-init/db-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./insforge-init/jwt.sql:/docker-entrypoint-initdb.d/02-jwt.sql
+      - ./insforge-init/postgresql.conf:/etc/postgresql/postgresql.conf
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+      - insforge-alpha
+
+  postgrest-alpha:
+    image: postgrest/postgrest:v12.2.12
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://postgres:alpha_pg_poc_123@pg-alpha:5432/insforge
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3000
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: alpha-jwt-secret-poc-change-me
+      PGRST_DB_CHANNEL_ENABLED: "true"
+      PGRST_DB_CHANNEL: pgrst
+    ports:
+      - "5430:3000"
+    depends_on:
+      pg-alpha:
+        condition: service_healthy
+    networks:
+      - default
+      - insforge-alpha
+
+  insforge-alpha:
+    image: insforge-local:latest
+    build:
+      context: ../../insforge-local
+      dockerfile: Dockerfile
+      target: runner
+    depends_on:
+      pg-alpha:
+        condition: service_healthy
+    ports:
+      - "7130:7130"
+      - "7131:7131"
+    environment:
+      - PORT=7130
+      - PROJECT_ROOT=/app
+      - JWT_SECRET=alpha-jwt-secret-poc-change-me
+      - ENCRYPTION_KEY=alpha-encryption-key-poc
+      - ADMIN_EMAIL=admin@alpha.com
+      - ADMIN_PASSWORD=alpha-admin-123
+      - POSTGRES_HOST=pg-alpha
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=insforge
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=alpha_pg_poc_123
+      - DATABASE_URL=postgresql://postgres:alpha_pg_poc_123@pg-alpha:5432/insforge
+      - POSTGREST_BASE_URL=http://postgrest-alpha:3000
+      - DENO_RUNTIME_URL=http://deno-alpha:7133
+      # S3 via Floci
+      - AWS_S3_BUCKET=app-host-alpha-a1b2c3d4e5f6
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - S3_ENDPOINT_URL=http://floci:4566
+      # Storage
+      - STORAGE_DIR=/insforge-storage
+      - LOGS_DIR=/insforge-logs
+    volumes:
+      - insforge-alpha-storage:/insforge-storage
+      - insforge-alpha-logs:/insforge-logs
+    labels:
+      - "traefik.enable=true"
+      # Route all *.alpha.app.localhost requests to this InsForge instance
+      - "traefik.http.routers.insforge-alpha.rule=HostRegexp(`{subdomain:[a-z0-9]+}.alpha.app.localhost`)"
+      - "traefik.http.routers.insforge-alpha.entrypoints=web"
+      - "traefik.http.services.insforge-alpha.loadbalancer.server.port=7130"
+    networks:
+      - default
+      - insforge-alpha
+
+  deno-alpha:
+    image: denoland/deno:alpine-2.0.6
+    working_dir: /app
+    depends_on:
+      pg-alpha:
+        condition: service_healthy
+    ports:
+      - "7133:7133"
+    environment:
+      - PORT=7133
+      - DENO_ENV=development
+      - DENO_DIR=/deno-dir
+      - POSTGRES_HOST=pg-alpha
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=insforge
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=alpha_pg_poc_123
+      - POSTGREST_BASE_URL=http://postgrest-alpha:3000
+      - WORKER_TIMEOUT_MS=60000
+      - ENCRYPTION_KEY=alpha-encryption-key-poc
+      - JWT_SECRET=alpha-jwt-secret-poc-change-me
+    volumes:
+      - ../../insforge-local/functions:/app/functions:ro
+      - deno-alpha-cache:/deno-dir
+    command: >
+      sh -c "
+        deno cache functions/server.ts &&
+        deno run --allow-net --allow-env --allow-read=./functions/worker-template.js functions/server.ts
+      "
+    networks:
+      - default
+      - insforge-alpha
+
+  # ===========================================================================
+  # Tenant: Tenant B (beta)
+  # ===========================================================================
+
+  pg-beta:
+    image: ghcr.io/insforge/postgres:v15.13.2
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c app.encryption_key='beta-encryption-key-poc'
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=beta_pg_poc_123
+      - POSTGRES_DB=insforge
+    volumes:
+      - pg-beta-data:/var/lib/postgresql/data
+      - ./insforge-init/db-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./insforge-init/jwt.sql:/docker-entrypoint-initdb.d/02-jwt.sql
+      - ./insforge-init/postgresql.conf:/etc/postgresql/postgresql.conf
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+      - insforge-beta
+
+  postgrest-beta:
+    image: postgrest/postgrest:v12.2.12
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://postgres:beta_pg_poc_123@pg-beta:5432/insforge
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3000
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: beta-jwt-secret-poc-change-me
+      PGRST_DB_CHANNEL_ENABLED: "true"
+      PGRST_DB_CHANNEL: pgrst
+    ports:
+      - "5431:3000"
+    depends_on:
+      pg-beta:
+        condition: service_healthy
+    networks:
+      - default
+      - insforge-beta
+
+  insforge-beta:
+    image: insforge-local:latest
+    build:
+      context: ../../insforge-local
+      dockerfile: Dockerfile
+      target: runner
+    depends_on:
+      pg-beta:
+        condition: service_healthy
+    ports:
+      - "7230:7130"
+      - "7231:7131"
+    environment:
+      - PORT=7130
+      - PROJECT_ROOT=/app
+      - JWT_SECRET=beta-jwt-secret-poc-change-me
+      - ENCRYPTION_KEY=beta-encryption-key-poc
+      - ADMIN_EMAIL=admin@beta.com
+      - ADMIN_PASSWORD=beta-admin-123
+      - POSTGRES_HOST=pg-beta
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=insforge
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=beta_pg_poc_123
+      - DATABASE_URL=postgresql://postgres:beta_pg_poc_123@pg-beta:5432/insforge
+      - POSTGREST_BASE_URL=http://postgrest-beta:3000
+      - DENO_RUNTIME_URL=http://deno-beta:7133
+      # S3 via Floci
+      - AWS_S3_BUCKET=app-host-beta-7a8b9c0d1e2f
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - S3_ENDPOINT_URL=http://floci:4566
+      - STORAGE_DIR=/insforge-storage
+      - LOGS_DIR=/insforge-logs
+    volumes:
+      - insforge-beta-storage:/insforge-storage
+      - insforge-beta-logs:/insforge-logs
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.insforge-beta.rule=HostRegexp(`{subdomain:[a-z0-9]+}.beta.app.localhost`)"
+      - "traefik.http.routers.insforge-beta.entrypoints=web"
+      - "traefik.http.services.insforge-beta.loadbalancer.server.port=7130"
+    networks:
+      - default
+      - insforge-beta
+
+  deno-beta:
+    image: denoland/deno:alpine-2.0.6
+    working_dir: /app
+    depends_on:
+      pg-beta:
+        condition: service_healthy
+    ports:
+      - "7233:7133"
+    environment:
+      - PORT=7133
+      - DENO_ENV=development
+      - DENO_DIR=/deno-dir
+      - POSTGRES_HOST=pg-beta
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=insforge
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=beta_pg_poc_123
+      - POSTGREST_BASE_URL=http://postgrest-beta:3000
+      - WORKER_TIMEOUT_MS=60000
+      - ENCRYPTION_KEY=beta-encryption-key-poc
+      - JWT_SECRET=beta-jwt-secret-poc-change-me
+    volumes:
+      - ../../insforge-local/functions:/app/functions:ro
+      - deno-beta-cache:/deno-dir
+    command: >
+      sh -c "
+        deno cache functions/server.ts &&
+        deno run --allow-net --allow-env --allow-read=./functions/worker-template.js functions/server.ts
+      "
+    networks:
+      - default
+      - insforge-beta
+
+  # ===========================================================================
+  # Tenant: Tenant C (gamma)
+  # ===========================================================================
+
+  pg-gamma:
+    image: ghcr.io/insforge/postgres:v15.13.2
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c app.encryption_key='gamma-encryption-key-poc'
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=gamma_pg_poc_123
+      - POSTGRES_DB=insforge
+    volumes:
+      - pg-gamma-data:/var/lib/postgresql/data
+      - ./insforge-init/db-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./insforge-init/jwt.sql:/docker-entrypoint-initdb.d/02-jwt.sql
+      - ./insforge-init/postgresql.conf:/etc/postgresql/postgresql.conf
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+      - insforge-gamma
+
+  postgrest-gamma:
+    image: postgrest/postgrest:v12.2.12
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://postgres:gamma_pg_poc_123@pg-gamma:5432/insforge
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3000
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: gamma-jwt-secret-poc-change-me
+      PGRST_DB_CHANNEL_ENABLED: "true"
+      PGRST_DB_CHANNEL: pgrst
+    ports:
+      - "5432:3000"
+    depends_on:
+      pg-gamma:
+        condition: service_healthy
+    networks:
+      - default
+      - insforge-gamma
+
+  insforge-gamma:
+    image: insforge-local:latest
+    build:
+      context: ../../insforge-local
+      dockerfile: Dockerfile
+      target: runner
+    depends_on:
+      pg-gamma:
+        condition: service_healthy
+    ports:
+      - "7330:7130"
+      - "7331:7131"
+    environment:
+      - PORT=7130
+      - PROJECT_ROOT=/app
+      - JWT_SECRET=gamma-jwt-secret-poc-change-me
+      - ENCRYPTION_KEY=gamma-encryption-key-poc
+      - ADMIN_EMAIL=admin@gamma.com
+      - ADMIN_PASSWORD=gamma-admin-123
+      - POSTGRES_HOST=pg-gamma
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=insforge
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=gamma_pg_poc_123
+      - DATABASE_URL=postgresql://postgres:gamma_pg_poc_123@pg-gamma:5432/insforge
+      - POSTGREST_BASE_URL=http://postgrest-gamma:3000
+      - DENO_RUNTIME_URL=http://deno-gamma:7133
+      # S3 via Floci
+      - AWS_S3_BUCKET=app-host-gamma-3a4b5c6d7e8f
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - S3_ENDPOINT_URL=http://floci:4566
+      - STORAGE_DIR=/insforge-storage
+      - LOGS_DIR=/insforge-logs
+    volumes:
+      - insforge-gamma-storage:/insforge-storage
+      - insforge-gamma-logs:/insforge-logs
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.insforge-gamma.rule=HostRegexp(`{subdomain:[a-z0-9]+}.gamma.app.localhost`)"
+      - "traefik.http.routers.insforge-gamma.entrypoints=web"
+      - "traefik.http.services.insforge-gamma.loadbalancer.server.port=7130"
+    networks:
+      - default
+      - insforge-gamma
+
+  deno-gamma:
+    image: denoland/deno:alpine-2.0.6
+    working_dir: /app
+    depends_on:
+      pg-gamma:
+        condition: service_healthy
+    ports:
+      - "7333:7133"
+    environment:
+      - PORT=7133
+      - DENO_ENV=development
+      - DENO_DIR=/deno-dir
+      - POSTGRES_HOST=pg-gamma
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=insforge
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=gamma_pg_poc_123
+      - POSTGREST_BASE_URL=http://postgrest-gamma:3000
+      - WORKER_TIMEOUT_MS=60000
+      - ENCRYPTION_KEY=gamma-encryption-key-poc
+      - JWT_SECRET=gamma-jwt-secret-poc-change-me
+    volumes:
+      - ../../insforge-local/functions:/app/functions:ro
+      - deno-gamma-cache:/deno-dir
+    command: >
+      sh -c "
+        deno cache functions/server.ts &&
+        deno run --allow-net --allow-env --allow-read=./functions/worker-template.js functions/server.ts
+      "
+    networks:
+      - default
+      - insforge-gamma
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  floci-data:
+  meta-db-data:
+  # Dunhe
+  pg-alpha-data:
+  insforge-alpha-storage:
+  insforge-alpha-logs:
+  deno-alpha-cache:
+  # Othermedia
+  pg-beta-data:
+  insforge-beta-storage:
+  insforge-beta-logs:
+  deno-beta-cache:
+  # Testcorp
+  pg-gamma-data:
+  insforge-gamma-storage:
+  insforge-gamma-logs:
+  deno-gamma-cache:
+
+# =============================================================================
+# Networks (per-tenant isolation)
+# =============================================================================
+networks:
+  insforge-alpha:
+    driver: bridge
+  insforge-beta:
+    driver: bridge
+  insforge-gamma:
+    driver: bridge

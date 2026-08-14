@@ -1,0 +1,546 @@
+{
+  "title": "招聘管理端到端流程",
+  "description": "覆盖从业务部门提出招聘需求到候选人入职报到的完整招聘流程，包含需求审核、岗位画像构建、简历筛选、面试协调、Offer管理和进度监控等核心环节",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "接收并审核招聘需求",
+      "type": "agent",
+      "prompt": "接收业务部门提交的招聘需求，从编制合理性、预算可行性和岗位必要性三个维度进行审核。检查需求单信息完整性，查询部门编制余额和招聘预算，评估岗位设置的必要性和合理性。2个工作日内输出审核结论（通过/不通过/有条件通过），对于不通过的需求给出具体改进建议。紧急需求启动4小时快速审核通道。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "recruitment-demand-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统-编制管理",
+          "预算管理系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "判断需求审核是否通过",
+      "type": "agent",
+      "prompt": "根据需求审核结论判断下一步流程：如果审核通过或有条件通过（前置条件已满足），进入岗位画像构建环节；如果审核不通过，退回业务部门并附带改进建议，等待修改后重新提交。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "recruitment-demand-analyst",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "构建岗位画像与编写JD",
+      "type": "agent",
+      "prompt": "基于审核通过的招聘需求，与用人经理进行结构化访谈，深入了解岗位核心产出、团队配置和理想候选人画像。将需求转化为结构化的岗位画像文档，包含：硬性条件定义（学历、年限、技能）、能力素质模型构建（核心能力+通用能力+专业能力及行为描述）、薪资带宽定位（P25-P50-P75市场分位值）、must-have与nice-to-have分级。编写JD并通过合规检查（确保无性别、年龄、民族、婚育状况等歧视性表述）。1个工作日内完成。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "recruitment-demand-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "薪酬市场数据库"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "制定招聘渠道策略并发布",
+      "type": "agent",
+      "prompt": "根据岗位画像的特征（类型、级别、稀缺度、紧急度）和预算约束，制定最优招聘渠道组合策略。常规岗位选择网招平台（Boss直聘、猎聘等）+内推；高端岗位启动猎头+定向挖猎；批量岗位使用校招+RPO。确定主渠道和辅助渠道，设定各渠道预期产出指标。如涉及猎头合作，选定猎头公司、确认费率并完成委托。在选定渠道上发布JD，同步开放内部推荐通道。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "recruitment-demand-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "招聘平台API",
+          "猎头管理系统",
+          "内推系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "执行简历筛选与初评",
+      "type": "agent",
+      "prompt": "从各招聘渠道汇总简历，执行去重检查（姓名+手机号+邮箱三要素）。基于岗位画像进行多维度匹配评估：首先硬性条件初筛（学历、年限、必备技能、薪资区间），然后对通过硬性筛选的简历进行评分（技能匹配度30%+经验相关度25%+教育背景15%+职业稳定性15%+发展潜力15%）。评分≥7分推荐进入面试，5-6分待定，<5分不推荐。简历到达后24小时内完成初筛。监控通过率：<15%建议放宽条件，>25%建议收紧标准。对暂不合适但有潜力的候选人标记入人才库。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "resume-screening-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "ATS系统",
+          "招聘平台API",
+          "人才库系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "执行电话初面确认意向",
+      "type": "agent",
+      "prompt": "对通过简历初筛的候选人在48小时内安排15-20分钟的电话初面。核实简历关键信息真实性，确认候选人求职意向和当前状态（在职/离职/已有其他Offer），了解薪资期望（当前薪资结构和期望总包）、可到岗时间，评估基本沟通表达能力。对意向明确的候选人当场约定正式面试时间。记录初面结果并给出推进/暂缓/放弃的明确结论。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "resume-screening-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "ATS系统",
+          "日程管理系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "判断初筛通过率是否在合理区间",
+      "type": "agent",
+      "prompt": "检查当前简历初筛通过率：如果在15-25%的目标区间内，正常推进面试流程；如果低于15%，通知招聘需求分析师评估是否需要放宽筛选条件或扩大渠道投入；如果高于25%，评估筛选标准是否过于宽松需要收紧。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "resume-screening-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "设计面试流程并安排首轮面试",
+      "type": "agent",
+      "prompt": "根据岗位类型确定面试流程方案（技术岗：笔试→技术面→业务面→HR面；管理岗：案例分析→小组讨论→高管面→HR面；销售岗：情景模拟→业务面→HR面）。明确各轮评估维度和评分标准。协调面试官时间与候选人时间的最优匹配，确保候选人通过初筛后3个工作日内安排首轮面试。发送正式面试邀请（含时间、地点/链接、面试官信息、准备事项）。面试前1天发送提醒。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "interview-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "日程管理系统",
+          "视频会议系统",
+          "邮件系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "收集面试反馈并推进后续轮次",
+      "type": "agent",
+      "prompt": "面试结束后跟踪面试官评估反馈的提交：24小时内催收结构化评估表，超48小时升级至面试官上级。根据各轮反馈判断是否推进至下一轮面试。通过当轮的候选人3个工作日内安排下一轮；未通过的候选人1个工作日内通知结果。处理异常情况：候选人改期（首次尊重，二次评估诚意）、爽约（有原因给一次机会，无故标记放弃）、面试官临时缺席（启动备选面试官）。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "interview-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "ATS系统",
+          "即时通讯系统"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "汇总面试评估形成综合报告",
+      "type": "agent",
+      "prompt": "在候选人完成全部面试轮次后，汇总各轮面试官的评估反馈。按能力维度重新归类和加权评分，分析各面试官评价的一致性（高度一致→直接结论；存在分歧→标记分歧点和原因）。撰写候选人综合评估报告，包含：各轮评分汇总、能力维度分析、核心优势、关注风险、录用建议等级（强烈推荐/推荐/保留/不推荐）和建议薪资区间。如有多位候选人，提供横向对比表和优先级排序。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "interview-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "ATS系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "判断候选人是否达到录用标准",
+      "type": "agent",
+      "prompt": "根据综合评估报告的录用建议等级判断下一步：如果建议为'强烈推荐'或'推荐'，进入Offer方案设计环节；如果建议为'保留'，与用人部门沟通确认是否录用或继续面试其他候选人；如果建议为'不推荐'，通知候选人结果并评估是否需要重启简历筛选。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "interview-coordinator",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "设计薪酬方案",
+      "type": "agent",
+      "prompt": "基于候选人综合评估报告的录用建议等级、候选人当前薪资结构和期望、岗位薪资带宽（P25/P50/P75）和内部同级别员工薪资，设计具有竞争力的个性化薪酬方案。方案包含：基本月薪（按评估等级确定分位值定位）、绩效奖金月数、年终奖目标、长期激励（如适用）、签字费（如需弥补候选人损失）、福利包明细。执行内部公平性检查，确认无薪资倒挂风险。终面通过后1个工作日内完成方案设计。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "offer-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "薪酬管理系统",
+          "薪酬市场数据库"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "发起Offer审批双签流程",
+      "type": "agent",
+      "prompt": "整合Offer审批所需材料（候选人评估报告、薪酬方案、内部对标分析、用人部门意见），在审批系统中发起Offer审批。标准路径需用人部门负责人（审批岗位匹配度）和HR总监（审批薪酬合理性）双签通过。每级审批设定1个工作日时限，超12小时未响应发送提醒，超24小时电话催促。如超P75需走特批路径（增加CHRO审批）。处理审批驳回：了解具体原因，调整方案后重新提交（不超过2次）。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "offer-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "OA审批系统",
+          "HR系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "判断Offer审批是否通过",
+      "type": "agent",
+      "prompt": "判断双签审批结果：如果双方都通过，立即进入Offer发放环节；如果一方驳回，分析驳回原因并决定处理方式——如果是方案可调整的问题（如薪资偏高），回到薪酬方案设计环节进行调整；如果是根本性否决（如不认可候选人），评估是否放弃该候选人并启动备选。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "offer-management-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "发放Offer并跟踪回复",
+      "type": "agent",
+      "prompt": "审批通过后4小时内完成Offer发放：生成正式Offer letter（使用法务审核过的模板），电话通知候选人录用结果并口头沟通薪酬方案要点，邮件发送正式Offer letter并设定回复期限（3-7天）。发放次日跟进候选人收到情况。候选人接受→进入背调和入职衔接流程；候选人拒绝→记录拒绝原因（薪资/发展/地点/竞对/家庭），评估是否有挽回空间或启动备选候选人；候选人犹豫→了解顾虑点，提供谈判支持。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "offer-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "邮件系统",
+          "电子签章系统"
+        ]
+      },
+      "position": {
+        "x": 4300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "判断候选人是否接受Offer",
+      "type": "agent",
+      "prompt": "根据候选人回复判断流程走向：接受Offer→进入背景调查和入职衔接环节；拒绝Offer→进行原因分析，评估是否调整方案再次尝试或启动备选候选人流程；候选人需要谈判→启动薪资谈判支持流程。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "offer-management-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 4600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "执行背景调查",
+      "type": "agent",
+      "prompt": "候选人接受Offer后立即启动背景调查：首先获取候选人签署的背调授权书（个人信息保护法合规要求）。根据岗位敏感度确定背调深度（普通岗位：学历+最近1份工作；中层：学历+近2份工作+离职原因；高管/敏感岗位：全面背调+征信+诉讼记录）。执行学历验证（学信网）、工作经历确认（联系前公司HR/上级）、离职原因核实。5个工作日内完成。结果评估：绿色通过→正常入职；黄色关注→与候选人确认偏差原因；红色异常→暂停入职，风险评估会议决策。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "offer-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "学信网",
+          "背调服务商",
+          "征信查询系统"
+        ]
+      },
+      "position": {
+        "x": 4900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "完成入职衔接移交",
+      "type": "document",
+      "prompt": "背调通过后完成入职衔接：确认候选人最终入职日期，准备入职信息移交包（个人基本信息、岗位信息、薪酬方案、直属上级、导师建议、评估报告摘要中的发展建议）。将完整信息移交至入职管理流程的入职准备协调员。通知用人部门入职日期并做好接收准备。向候选人发送入职前指引（报到时间地点、所需材料清单、入职前准备建议）。",
+      "dependentTasks": [
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "offer-management-specialist",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "HR系统",
+          "入职管理系统"
+        ]
+      },
+      "position": {
+        "x": 5200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "执行招聘进度监控与预警",
+      "type": "agent",
+      "prompt": "持续监控所有在招岗位的招聘进度。为每个岗位设定里程碑基线（Day1-2需求审核→Day3-10简历筛选→Day11-22面试→Day23-30 Offer），每日更新实际进度。招聘超过20个工作日未进入面试阶段发出黄色预警；超过25天未发出Offer发出橙色预警并升级至HR负责人；超过30天启动红色预警和加急流程（扩大渠道投入、建议提升薪资竞争力5-15%、评估可放宽的非核心要求、面试轮次合并审批快速通道）。每周五更新招聘看板，月度输出招聘分析报告。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "recruitment-demand-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "ATS系统",
+          "BI报表系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-16",
+      "target": "task-17"
+    },
+    {
+      "source": "task-17",
+      "target": "task-18"
+    },
+    {
+      "source": "task-4",
+      "target": "task-19"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "recruitmentDemand",
+      "value": "",
+      "description": "业务部门提交的招聘需求信息，包含岗位名称、部门、人数、级别、预算、期望到岗时间等",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-2",
+      "name": "jobProfile",
+      "value": "",
+      "description": "结构化的岗位画像文档，包含硬性条件、能力素质模型、薪资带宽和筛选标准",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-3",
+      "name": "channelStrategy",
+      "value": "",
+      "description": "招聘渠道组合策略，包含主渠道、辅助渠道、各渠道预算和预期产出",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-4",
+      "name": "candidateList",
+      "value": "",
+      "description": "候选人清单，包含每位候选人的简历信息、筛选评分、面试状态和评估结果",
+      "required": true,
+      "variableType": "array"
+    },
+    {
+      "variableId": "var-5",
+      "name": "interviewEvaluation",
+      "value": "",
+      "description": "候选人综合面试评估报告，含各轮评分、能力分析、录用建议等级",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-6",
+      "name": "compensationPackage",
+      "value": "",
+      "description": "薪酬方案，包含基本薪资、绩效奖金、年终奖、长期激励、福利明细",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-7",
+      "name": "offerStatus",
+      "value": "",
+      "description": "Offer状态跟踪：审批中/已发放/已接受/已拒绝/谈判中",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "backgroundCheckResult",
+      "value": "",
+      "description": "背景调查结果，包含各维度验证详情和总体结论（通过/关注/异常）",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-9",
+      "name": "recruitmentCycleDays",
+      "value": "",
+      "description": "当前岗位的招聘周期天数（从需求审核通过日起计算），用于进度监控和预警",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-10",
+      "name": "screeningPassRate",
+      "value": "",
+      "description": "简历初筛通过率百分比，目标区间15-25%，用于筛选标准校准",
+      "required": true,
+      "variableType": "number"
+    }
+  ]
+}

@@ -1,0 +1,693 @@
+{
+  "title": "安全运维工作流",
+  "description": "覆盖安全事件响应、漏洞全生命周期管理、访问控制审计、合规持续验证的安全运维自动化工作流，确保组织在满足等保2.0合规要求的同时有效应对各类安全威胁。",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "安全告警接收与关联分析",
+      "type": "agent",
+      "prompt": "接收来自WAF/IDS/HIDS/EDR/SIEM等多源安全设备的告警数据。执行以下操作：1）告警去重——相同来源、规则、目标在5分钟内的重复告警合并；2）告警富化——补充资产信息和威胁情报（IP信誉查询）；3）基于时间窗口（±30分钟）和网络拓扑进行告警关联分析；4）将告警特征映射到MITRE ATT&CK框架。输出关联分析结果和关联告警组列表。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "security-event-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "SIEM",
+          "WAF",
+          "IDS/IPS",
+          "EDR",
+          "威胁情报平台"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "威胁研判与事件定级",
+      "type": "agent",
+      "prompt": "基于告警关联分析结果执行威胁研判。综合分析时间维度（是否在非工作时间）、空间维度（来源IP是否为已知恶意IP/Tor节点）、行为维度（是否偏离正常业务模式）。给出研判结论：确认攻击/可疑/误报/合法行为，并提供置信度评分（0-100%）。对确认的攻击按照S1-S4标准进行事件分级：S1（数据泄露/系统入侵/勒索攻击）、S2（高危漏洞被利用/DDoS）、S3（恶意扫描/钓鱼/弱口令）、S4（低风险告警）。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "security-event-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "SIEM",
+          "威胁情报平台",
+          "CMDB"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "研判结果分流决策",
+      "type": "agent",
+      "prompt": "根据威胁研判结论进行分流：如果研判为误报，则标记关闭并反馈规则优化建议，流程结束；如果为可疑，则加入72小时观察清单持续监控；如果确认为攻击，根据事件等级分流：S4→创建工单纳入常规处理，S3→通知安全工程师24h内处置，S2→4小时内处置并通知安全负责人，S1→立即启动应急响应流程。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "security-event-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "S1/S2应急响应启动",
+      "type": "agent",
+      "prompt": "对确认的S1/S2安全事件立即启动应急响应：1）创建安全事件工单（编号SEC-YYYYMMDD-序号）；2）建立应急通信群，拉通安全团队、受影响系统Owner、CISO（S1）；3）协调执行系统隔离（使用网络ACL而非关机，保留取证现场）；4）攻击源封禁（IP/域名/端口级别阻断）；5）确保关键日志已保存、安排磁盘快照和内存dump；6）S1事件1小时内上报CISO。每30分钟向管理层同步处置进展。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "security-event-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "防火墙",
+          "WAF",
+          "堡垒机",
+          "通信平台",
+          "工单系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "攻击持续性评估",
+      "type": "agent",
+      "prompt": "评估攻击是否已被有效遏制：检查隔离措施是否生效（受影响系统是否与攻击源完全隔离）、是否检测到新的攻击活动或横向移动迹象、是否发现新的受影响系统。如果攻击已遏制，进入深度调查阶段；如果攻击仍在持续或发现横向移动，需要扩大隔离范围并考虑引入外部安全专家；如果2小时仍未遏制S1事件，升级至CTO/CEO。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "security-event-agent",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "SIEM",
+          "EDR",
+          "网络监控"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "深度调查与攻击溯源",
+      "type": "agent",
+      "prompt": "对已遏制的安全事件执行深度调查：1）攻击链还原——追溯入侵路径、利用的漏洞、横向移动路径、持久化机制；2）数据泄露范围评估——确认泄露的数据类型、数量和敏感级别；3）完整受影响资产清单确认；4）攻击者画像分析（技术水平/动机/是否为APT/是否为内部人员）。评估是否触发《个人信息保护法》72小时通知义务。输出深度调查报告。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "security-event-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "SIEM",
+          "日志平台",
+          "EDR",
+          "网络流量分析"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "系统恢复与安全加固",
+      "type": "agent",
+      "prompt": "基于深度调查结果执行恢复和加固：1）清除所有持久化机制（后门/Webshell/恶意计划任务/异常账号）；2）修复被利用的漏洞（协调漏洞管理Agent）；3）加固安全配置（修改弱密码/关闭不必要服务/加强访问控制）；4）复查确认无攻击残留；5）逐步恢复系统服务（先恢复非面向用户的内部功能，验证稳定后恢复对外服务）。输出恢复确认报告和加固措施清单。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "security-event-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "变更管理系统",
+          "监控平台"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "安全事件报告编写",
+      "type": "document",
+      "prompt": "在事件恢复后48小时内编写结构化安全事件报告，包含以下部分：1）事件概述（事件编号/类型/等级/发现时间/影响时长）；2）完整时间线（精确到分钟的关键节点记录）；3）技术分析（攻击向量/利用漏洞/攻击链描述/IoC列表）；4）影响评估（影响系统数/数据泄露量/业务中断时长/合规影响）；5）处置过程详细记录；6）根因分析（为何能被攻击/哪些防护措施失效）；7）改进建议和Action清单（每个Action有明确Owner和Deadline）。报告提交CISO审核。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "security-event-agent",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "文档管理系统",
+          "工单系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "漏洞扫描结果整合",
+      "type": "agent",
+      "prompt": "整合多源漏洞发现数据：1）导入本周自动化扫描结果（Nessus/OpenVAS/Qualys）；2）整合最新安全情报（CNVD/CVE/厂商安全通告中披露的新漏洞）；3）纳入渗透测试发现（如有）；4）执行漏洞去重（基于CVE编号/CWE类型/资产指纹）；5）验证漏洞真实性（排除扫描器误报）；6）确认受影响资产完整范围。输出确认的漏洞清单。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "vulnerability-management-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "Nessus/OpenVAS",
+          "CNVD/CVE数据库",
+          "CMDB"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "漏洞优先级评估",
+      "type": "agent",
+      "prompt": "对确认的漏洞清单执行多因子优先级评估：1）获取CVSS基础分；2）查询受影响资产的重要性分级（核心交易系统×3/一般业务×2/内部管理×1.5/测试×1）；3）评估可利用性（在野利用×3/有公开EXP×2.5/有PoC×2/仅理论×1）；4）分析暴露面（面向互联网×3/DMZ×2/内网×1.5/隔离×1）；5）计算综合优先级得分；6）识别攻击链（多漏洞组合路径）。按照修复时效要求分类：高危24h/中危7天/低危30天。输出优先级排序清单。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "vulnerability-management-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "NVD/CNVD",
+          "CMDB",
+          "威胁情报平台"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "漏洞修复方案制定",
+      "type": "agent",
+      "prompt": "为优先级排序后的漏洞制定修复方案：1）确定可用修复手段（正式补丁/配置加固/虚拟补丁/网络隔离/组件替换）；2）评估各方案的兼容性风险和重启需求；3）确定推荐方案及理由；4）制定回退方案；5）确定修复Owner（对应资产Owner）和Deadline（基于优先级SLA）；6）对高危漏洞同时准备临时缓解措施（24h内生效）。将修复方案作为变更申请提交给变更管理Scope。输出修复计划文档。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "vulnerability-management-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "变更管理系统",
+          "补丁管理平台"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "漏洞修复超时判断",
+      "type": "agent",
+      "prompt": "检查漏洞修复进度：对照每个漏洞的SLA截止时间（高危24h/中危7天/低危30天），判断是否存在超时未修复的漏洞。如果所有漏洞按时修复，进入修复验证步骤；如果存在超时，触发升级机制——第1次超时邮件提醒Owner，第2次超时（+48h）升级Team Lead，第3次超时（+7天）升级CISO。同时评估是否需要对超时漏洞实施临时缓解措施。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "vulnerability-management-agent",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "工单系统",
+          "通知平台"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "漏洞修复验证",
+      "type": "agent",
+      "prompt": "对所有标记为已修复的漏洞执行复扫验证：1）使用与初始发现相同的扫描工具执行针对性复扫；2）确认漏洞CVE在目标系统上不再可检出；3）验证修复未引入新的安全问题（回归检查）；4）对验证通过的漏洞执行正式关闭；5）对验证失败的漏洞重新开放并回退到修复方案制定步骤。统计漏洞重开率（目标≤5%）。输出验证报告和漏洞状态更新。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "vulnerability-management-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "Nessus/OpenVAS",
+          "漏洞管理平台"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "特权账号清单核对",
+      "type": "agent",
+      "prompt": "执行月度特权账号清单核对：1）从所有系统（AD/LDAP/Linux root/数据库DBA/云平台管理员/应用超管）提取当前特权账号列表；2）与已维护的特权账号清单进行逐一比对；3）标注新增的未记录特权账号（需立即确认合法性）；4）标注清单中存在但系统中已不存在的废弃记录；5）验证每个特权账号都有明确的Owner和用途说明；6）检查是否存在共享特权账号。输出特权账号清单差异报告，未记录特权账号必须在24小时内确认并补录或删除。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "access-control-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "AD/LDAP",
+          "PAM系统",
+          "CMDB",
+          "云平台IAM"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "权限合理性审查",
+      "type": "agent",
+      "prompt": "对所有特权账号和关键系统权限执行合理性审查：1）检查权限过大——用户实际操作是否需要当前权限级别（对比操作日志和权限范围）；2）检查职责分离冲突——同一人是否同时拥有申请与审批、开发与部署等冲突权限；3）核对HR离职名单——已离职人员是否仍有活跃账号（必须24h内停用）；4）核对调岗记录——已调岗人员旧部门权限是否已回收；5）标记长期未使用（>90天）的特权账号。输出权限异常清单及整改建议。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "access-control-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "PAM系统",
+          "各业务系统IAM"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "密码策略与MFA合规检查",
+      "type": "agent",
+      "prompt": "检查特权账号密码策略合规情况：1）获取每个特权账号的最后密码修改时间，标注距今天数；2）标记已超过90天未修改的过期账号（零容忍）；3）对过期账号触发强制密码轮换流程；4）验证密码复杂度要求满足（≥16位/包含大小写字母+数字+特殊字符）；5）检查核心系统MFA（多因子认证）启用状态，确保覆盖率100%；6）验证会话超时设置（特权会话≤30分钟无操作自动断开）。输出密码合规状态报告和轮换执行记录。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "access-control-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "PAM系统",
+          "AD/LDAP",
+          "MFA平台"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "异常访问行为检测",
+      "type": "agent",
+      "prompt": "分析访问日志识别异常行为模式：1）检测暴力破解尝试（单一来源5分钟内≥10次认证失败）；2）检测异地登录（同一账号1小时内从地理距离>500km的地点登录）；3）标记非工作时间特权操作（22:00-08:00的管理员操作）；4）检测异常数据访问（数据查询/下载量超出历史基线3倍以上）；5）检测横向移动迹象（账号突然访问历史上从未访问的系统）。对检测到的高风险异常（风险分≥70），立即推送给安全事件响应Agent进行威胁研判。输出异常行为告警和风险评分报告。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "access-control-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "日志平台",
+          "SIEM",
+          "堡垒机"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "异常行为分流决策",
+      "type": "agent",
+      "prompt": "根据异常行为检测结果进行分流处理：如果发现高风险异常（风险分≥70），立即推送给安全事件响应Agent作为安全告警输入进行威胁研判；如果为中风险异常（50-70分），通知账号Owner在24小时内确认操作合法性；如果为低风险异常（30-50分），记录到观察清单，连续3次出现则升级为中风险。同时将异常行为检测结果纳入月度审计报告。",
+      "dependentTasks": [
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "access-control-agent",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "通知平台",
+          "工单系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "访问控制审计报告生成",
+      "type": "document",
+      "prompt": "汇总本月访问控制审计结果，生成月度审计报告：1）特权账号清单变化（新增/删除/变更）；2）权限异常发现汇总（权限过大/职责冲突/离职未回收/长期未使用）；3）密码策略合规状态（轮换合规率/MFA覆盖率/过期账号数）；4）异常行为统计（各类异常数量/风险等级分布/处理结果）；5）上期整改项闭环情况；6）本期新增整改项（含Owner/Deadline）；7）权限合规率趋势分析。将IAM合规数据同步给合规审计Agent用于整体合规评估。",
+      "dependentTasks": [
+        "task-15",
+        "task-16",
+        "task-18"
+      ],
+      "metadata": {
+        "agentRef": "access-control-agent",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "报告平台"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-20",
+      "title": "等保控制项基线检查",
+      "type": "agent",
+      "prompt": "执行季度合规基线检查：1）确认等保2.0三级控制项基线（240+项）的当前版本和适用性；2）执行技术控制项自动化检查（覆盖率≥70%）——包括安全通信网络（TLS/加密算法）、安全区域边界（防火墙/IDS/恶意代码防护）、安全计算环境（身份鉴别/访问控制/安全审计/入侵防范/数据保护/备份恢复）、安全管理中心（集中管控/日志集中）；3）收集技术证据（配置截图/扫描报告/日志样本）；4）为每个控制项标注状态：达标(G)/部分达标(Y)/不达标(R)/不适用(N/A)。输出自动化检查结果和技术证据清单。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "compliance-audit-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "合规扫描工具",
+          "SIEM",
+          "防火墙",
+          "杀毒平台",
+          "备份系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-21",
+      "title": "管理控制项人工验证",
+      "type": "agent",
+      "prompt": "对技术手段无法覆盖的管理控制项执行人工验证：1）安全管理制度——验证各项安全策略文档的完整性、版本号和最后修订日期；2）安全管理机构——验证安全组织架构设置、安全岗位职责定义；3）安全管理人员——验证背景调查记录、保密协议签署、安全培训记录和考核成绩；4）安全建设管理——验证系统建设方案审批、等保定级备案、安全测评报告；5）安全运维管理——验证变更管理记录、备份恢复测试记录、应急预案演练记录。记录验证结果和证据。",
+      "dependentTasks": [
+        "task-20"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "文档管理系统",
+          "HR系统",
+          "培训平台"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 700
+      }
+    },
+    {
+      "id": "task-22",
+      "title": "合规差距分析与整改计划",
+      "type": "agent",
+      "prompt": "汇总技术和管理检查结果执行差距分析：1）提取所有'部分达标'和'不达标'项，按控制域分类；2）分析差距原因（技术缺失/配置漂移/制度过期/执行不到位）；3）评估差距风险等级——高风险（可能导致重大安全事件或等保评测不通过）、中风险（存在安全隐患但有一定补偿控制）、低风险（文档性或轻微配置问题）；4）制定整改计划——每个差距项明确整改方案/Owner/Deadline/验收标准；5）高风险差距30天内关闭，中风险60天，低风险90天。整改中的技术实施通过变更管理Scope执行。输出差距分析报告和整改计划。",
+      "dependentTasks": [
+        "task-21"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "工单系统",
+          "变更管理系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-23",
+      "title": "合规达标率评估决策",
+      "type": "agent",
+      "prompt": "评估当前合规达标率是否满足目标要求（≥95%）。计算方式：达标项计100%+部分达标计50%+不达标计0%，除以总适用控制项数。如果达标率≥95%，标记本季度合规状态为绿色（健康），输出合规状态仪表盘；如果达标率在90%-95%之间，标记为黄色（关注），需加快整改进度；如果达标率<90%，标记为红色（告警），需CISO介入督办并启动专项整改项目。特别关注距年度等保复评的时间，如果不足90天且存在高风险差距，升级为紧急事项。",
+      "dependentTasks": [
+        "task-22"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1000,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-24",
+      "title": "合规证据收集与归档",
+      "type": "agent",
+      "prompt": "系统性采集和组织等保合规评测所需的证据材料：1）按控制域建立证据目录结构；2）自动化采集技术证据（系统配置导出/安全设备策略快照/审计日志样本/监控大盘截图）；3）收集管理证据（制度文档/审批记录/培训记录/会议纪要）；4）对敏感信息脱敏处理（隐藏真实密码/密钥）；5）验证证据时效性（评测年度内有效）；6）为每份证据编号建立索引；7）统计证据就绪状态。确保评测前30天完成全量证据收集。输出证据清单索引和就绪状态报告。",
+      "dependentTasks": [
+        "task-22"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "文档管理系统",
+          "各安全系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 700
+      }
+    },
+    {
+      "id": "task-25",
+      "title": "法规变更追踪与影响评估",
+      "type": "agent",
+      "prompt": "持续监控中国网络安全法规体系的变化：1）追踪国家网信办/公安部/工信部发布的新规和标准修订；2）监控《网络安全法》《数据安全法》《个人信息保护法》的实施细则和执法案例；3）对新发布的法规/标准在7天内完成影响评估——确定是否产生新的合规要求、影响哪些现有控制项、需要什么新增投入；4）高影响变更24小时内上报CISO；5）将法规变更转化为合规基线的更新（新增/修改控制项）。输出法规变更影响评估报告和基线更新建议。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "compliance-audit-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "法规信息平台",
+          "通知系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 700
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-14",
+      "target": "task-16"
+    },
+    {
+      "source": "task-15",
+      "target": "task-17"
+    },
+    {
+      "source": "task-17",
+      "target": "task-18"
+    },
+    {
+      "source": "task-15",
+      "target": "task-19"
+    },
+    {
+      "source": "task-16",
+      "target": "task-19"
+    },
+    {
+      "source": "task-18",
+      "target": "task-19"
+    },
+    {
+      "source": "task-20",
+      "target": "task-21"
+    },
+    {
+      "source": "task-21",
+      "target": "task-22"
+    },
+    {
+      "source": "task-22",
+      "target": "task-23"
+    },
+    {
+      "source": "task-22",
+      "target": "task-24"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "securityAlertData",
+      "value": "",
+      "description": "安全告警原始数据，包含告警来源、类型、源/目标IP、时间戳、原始日志等信息",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "incidentSeverityLevel",
+      "value": "",
+      "description": "安全事件等级（S1/S2/S3/S4），决定后续处置流程和时效要求",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "vulnerabilityScanResults",
+      "value": "",
+      "description": "漏洞扫描工具输出的原始扫描结果数据",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "assetInventory",
+      "value": "",
+      "description": "CMDB资产清单数据，包含资产重要性分级、所属业务、暴露面等信息",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "privilegeAccountList",
+      "value": "",
+      "description": "当前特权账号清单，包含账号名、权限级别、Owner、最后密码修改时间等",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "complianceBaseline",
+      "value": "",
+      "description": "等保2.0三级合规基线，包含240+控制项及其检查标准",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "threatIntelligence",
+      "value": "",
+      "description": "威胁情报数据，包含恶意IP/域名库、在野利用漏洞清单、攻击组织情报等",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "hrPersonnelChanges",
+      "value": "",
+      "description": "HR人事变动信息，包含离职/调岗/入职人员名单及生效日期",
+      "required": false,
+      "variableType": "string"
+    }
+  ]
+}

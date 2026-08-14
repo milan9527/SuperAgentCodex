@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>跨组织 Agent 网络 — Super Agent</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+body{font-family:'Inter',system-ui,sans-serif}
+.card-hover{transition:all .3s ease}
+.card-hover:hover{transform:translateY(-2px);box-shadow:0 20px 40px rgba(0,0,0,.3)}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.float{animation:float 3s ease-in-out infinite}
+.float-delay{animation:float 3s ease-in-out 1s infinite}
+</style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex">
+
+<!-- Sidebar -->
+<aside class="w-16 bg-gray-900 border-r border-gray-800 flex flex-col items-center py-4 gap-2 shrink-0">
+  <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center mb-4">
+    <span class="text-white font-bold text-lg">S</span>
+  </div>
+  <nav class="flex flex-col gap-1 flex-1">
+    <a href="index.html" class="w-12 h-12 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-800 hover:text-white">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
+    </a>
+    <div class="w-12 h-12 rounded-lg flex items-center justify-center bg-cyan-600/15 text-cyan-400 relative">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+      <div class="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan-400 rounded-r-full"></div>
+    </div>
+  </nav>
+</aside>
+
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto">
+<div class="p-6 space-y-6 max-w-7xl mx-auto">
+
+  <!-- Page Header -->
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="flex items-center gap-3 mb-1">
+        <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+          <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+        </div>
+        <h1 class="text-2xl font-bold text-white">Agent 网络</h1>
+        <span class="px-2 py-0.5 text-[10px] font-medium bg-cyan-500/20 text-cyan-400 rounded-full">BETA</span>
+      </div>
+      <p class="text-gray-400 text-sm ml-11">发布 Agent 服务、发现外部 Agent、构建跨组织协作网络</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <button class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-white/[0.06] text-gray-400 hover:bg-gray-800 transition-all">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        API 设置
+      </button>
+      <button class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:shadow-lg hover:shadow-cyan-500/20 transition-all">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        发布 Agent 服务
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex items-center gap-1 bg-gray-800/60 rounded-lg p-1 border border-white/[0.06] w-fit">
+    <button class="px-4 py-2 rounded-md text-sm font-medium bg-cyan-600/20 text-cyan-400">我发布的</button>
+    <button class="px-4 py-2 rounded-md text-sm font-medium text-gray-400 hover:text-white">发现服务</button>
+    <button class="px-4 py-2 rounded-md text-sm font-medium text-gray-400 hover:text-white">已订阅</button>
+    <button class="px-4 py-2 rounded-md text-sm font-medium text-gray-400 hover:text-white">调用日志</button>
+  </div>
+
+  <!-- My Published Services -->
+  <div class="space-y-4">
+    <h2 class="text-lg font-semibold text-white">我发布的 Agent 服务</h2>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- Published Service 1 -->
+      <div class="card-hover rounded-2xl border border-cyan-500/20 bg-cyan-500/5 backdrop-blur-xl p-5">
+        <div class="flex items-start justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">法</div>
+            <div>
+              <h3 class="text-white font-semibold">法律合同审查服务</h3>
+              <p class="text-gray-500 text-xs">legal-review.agent.superagent.ai</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-500/10">
+            <div class="w-2 h-2 rounded-full bg-green-500"></div>
+            <span class="text-xs text-green-400">在线</span>
+          </div>
+        </div>
+        <p class="text-gray-400 text-sm mb-4">提供合同条款审查、风险识别、合规建议。支持中英文合同，覆盖劳动合同、采购合同、NDA 等类型。</p>
+        <div class="flex flex-wrap gap-1.5 mb-4">
+          <span class="px-2 py-0.5 text-[10px] bg-gray-800 text-gray-400 rounded">合同审查</span>
+          <span class="px-2 py-0.5 text-[10px] bg-gray-800 text-gray-400 rounded">风险识别</span>
+          <span class="px-2 py-0.5 text-[10px] bg-gray-800 text-gray-400 rounded">中英双语</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mb-4">
+          <div class="text-center p-2 rounded-lg bg-gray-900/60">
+            <div class="text-lg font-bold text-white">847</div>
+            <div class="text-[10px] text-gray-500">本月调用</div>
+          </div>
+          <div class="text-center p-2 rounded-lg bg-gray-900/60">
+            <div class="text-lg font-bold text-white">12</div>
+            <div class="text-[10px] text-gray-500">订阅组织</div>
+          </div>
+          <div class="text-center p-2 rounded-lg bg-gray-900/60">
+            <div class="text-lg font-bold text-cyan-400">¥2,340</div>
+            <div class="text-[10px] text-gray-500">本月收入</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-3 border-t border-white/[0.04]">
+          <button class="flex-1 px-3 py-2 rounded-lg text-xs font-medium border border-white/[0.06] text-gray-400 hover:bg-gray-800 transition-all text-center">API 文档</button>
+          <button class="flex-1 px-3 py-2 rounded-lg text-xs font-medium border border-white/[0.06] text-gray-400 hover:bg-gray-800 transition-all text-center">调用统计</button>
+          <button class="flex-1 px-3 py-2 rounded-lg text-xs font-medium border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 transition-all text-center">管理</button>
+        </div>
+      </div>
+
+      <!-- Published Service 2 -->
+      <div class="card-hover rounded-2xl border border-white/[0.06] bg-gray-900/60 backdrop-blur-xl p-5">
+        <div class="flex items-start justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold text-lg">数</div>
+            <div>
+              <h3 class="text-white font-semibold">数据分析报告生成</h3>
+              <p class="text-gray-500 text-xs">data-report.agent.superagent.ai</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-500/10">
+            <div class="w-2 h-2 rounded-full bg-green-500"></div>
+            <span class="text-xs text-green-400">在线</span>
+          </div>
+        </div>
+        <p class="text-gray-400 text-sm mb-4">接收结构化数据，自动生成可视化分析报告。支持 CSV/JSON 输入，输出 PDF 报告和关键洞察摘要。</p>
+        <div class="flex flex-wrap gap-1.5 mb-4">
+          <span class="px-2 py-0.5 text-[10px] bg-gray-800 text-gray-400 rounded">数据分析</span>
+          <span class="px-2 py-0.5 text-[10px] bg-gray-800 text-gray-400 rounded">报告生成</span>
+          <span class="px-2 py-0.5 text-[10px] bg-gray-800 text-gray-400 rounded">可视化</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mb-4">
+          <div class="text-center p-2 rounded-lg bg-gray-900/60 border border-white/[0.03]">
+            <div class="text-lg font-bold text-white">1,203</div>
+            <div class="text-[10px] text-gray-500">本月调用</div>
+          </div>
+          <div class="text-center p-2 rounded-lg bg-gray-900/60 border border-white/[0.03]">
+            <div class="text-lg font-bold text-white">8</div>
+            <div class="text-[10px] text-gray-500">订阅组织</div>
+          </div>
+          <div class="text-center p-2 rounded-lg bg-gray-900/60 border border-white/[0.03]">
+            <div class="text-lg font-bold text-purple-400">¥1,890</div>
+            <div class="text-[10px] text-gray-500">本月收入</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-3 border-t border-white/[0.04]">
+          <button class="flex-1 px-3 py-2 rounded-lg text-xs font-medium border border-white/[0.06] text-gray-400 hover:bg-gray-800 transition-all text-center">API 文档</button>
+          <button class="flex-1 px-3 py-2 rounded-lg text-xs font-medium border border-white/[0.06] text-gray-400 hover:bg-gray-800 transition-all text-center">调用统计</button>
+          <button class="flex-1 px-3 py-2 rounded-lg text-xs font-medium border border-white/[0.06] text-gray-400 hover:bg-gray-800 transition-all text-center">管理</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Discover External Agent Services -->
+  <div class="space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-white">发现 Agent 服务</h2>
+      <div class="relative">
+        <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <input type="text" placeholder="搜索 Agent 服务..." class="bg-gray-800/60 border border-white/[0.06] rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500/50 w-64"/>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <!-- External Service 1 -->
+      <div class="card-hover rounded-2xl border border-white/[0.06] bg-gray-900/60 backdrop-blur-xl overflow-hidden group cursor-pointer hover:border-cyan-500/40">
+        <div class="p-5">
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-white font-bold">财</div>
+              <div>
+                <h3 class="text-white font-semibold text-sm group-hover:text-cyan-400 transition-colors">智能财税申报</h3>
+                <p class="text-gray-500 text-xs">by 云税科技</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-1">
+              <svg class="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <span class="text-xs text-gray-400">4.8</span>
+            </div>
+          </div>
+          <p class="text-gray-400 text-xs mb-3">自动识别发票信息、计算税额、生成申报表。支持增值税、企业所得税等主要税种。</p>
+          <div class="flex items-center justify-between pt-3 border-t border-white/[0.04]">
+            <div class="flex items-center gap-3 text-xs text-gray-500">
+              <span>¥0.5/次</span>
+              <span>·</span>
+              <span>3,200+ 调用</span>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors">订阅</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- External Service 2 -->
+      <div class="card-hover rounded-2xl border border-white/[0.06] bg-gray-900/60 backdrop-blur-xl overflow-hidden group cursor-pointer hover:border-cyan-500/40">
+        <div class="p-5">
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">招</div>
+              <div>
+                <h3 class="text-white font-semibold text-sm group-hover:text-cyan-400 transition-colors">简历智能筛选</h3>
+                <p class="text-gray-500 text-xs">by 猎才 AI</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-1">
+              <svg class="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <span class="text-xs text-gray-400">4.6</span>
+            </div>
+          </div>
+          <p class="text-gray-400 text-xs mb-3">批量解析简历、匹配 JD 要求、生成候选人排名和面试建议。支持 PDF/Word 格式。</p>
+          <div class="flex items-center justify-between pt-3 border-t border-white/[0.04]">
+            <div class="flex items-center gap-3 text-xs text-gray-500">
+              <span>¥0.3/次</span>
+              <span>·</span>
+              <span>8,700+ 调用</span>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors">订阅</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- External Service 3 -->
+      <div class="card-hover rounded-2xl border border-white/[0.06] bg-gray-900/60 backdrop-blur-xl overflow-hidden group cursor-pointer hover:border-cyan-500/40">
+        <div class="p-5">
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-white font-bold">供</div>
+              <div>
+                <h3 class="text-white font-semibold text-sm group-hover:text-cyan-400 transition-colors">供应商资质核验</h3>
+                <p class="text-gray-500 text-xs">by 企查通</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-1">
+              <svg class="w-3 h-3 text-yellow-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              <span class="text-xs text-gray-400">4.9</span>
+            </div>
+          </div>
+          <p class="text-gray-400 text-xs mb-3">自动查询企业工商信息、资质证书、诉讼记录、信用评分。输出结构化尽调报告。</p>
+          <div class="flex items-center justify-between pt-3 border-t border-white/[0.04]">
+            <div class="flex items-center gap-3 text-xs text-gray-500">
+              <span>¥1.0/次</span>
+              <span>·</span>
+              <span>5,100+ 调用</span>
+            </div>
+            <button class="px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors">订阅</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Endpoint Preview -->
+  <div class="space-y-4">
+    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+      <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+      API 接入示例
+    </h2>
+    <div class="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 backdrop-blur-xl overflow-hidden">
+      <div class="flex items-center gap-2 px-5 py-3 border-b border-white/[0.06]">
+        <span class="px-2 py-0.5 text-[10px] font-bold bg-green-500/20 text-green-400 rounded">POST</span>
+        <code class="text-sm text-gray-300">https://api.superagent.ai/v1/agents/legal-review/chat</code>
+        <button class="ml-auto px-2 py-1 text-[10px] text-gray-500 hover:text-white border border-white/[0.06] rounded">复制</button>
+      </div>
+      <div class="p-5">
+        <div class="grid grid-cols-2 gap-4">
+          <!-- Request -->
+          <div>
+            <h4 class="text-xs text-gray-500 mb-2 font-medium">Request</h4>
+            <pre class="bg-gray-900/80 rounded-lg p-4 text-xs text-gray-300 overflow-x-auto border border-white/[0.04]"><code>{
+  "message": "请审查这份采购合同的风险条款",
+  "attachments": [
+    {
+      "type": "document",
+      "url": "https://example.com/contract.pdf"
+    }
+  ],
+  "options": {
+    "language": "zh-CN",
+    "detail_level": "comprehensive"
+  }
+}</code></pre>
+          </div>
+          <!-- Response -->
+          <div>
+            <h4 class="text-xs text-gray-500 mb-2 font-medium">Response (streaming)</h4>
+            <pre class="bg-gray-900/80 rounded-lg p-4 text-xs text-gray-300 overflow-x-auto border border-white/[0.04]"><code>{
+  "id": "msg_abc123",
+  "status": "completed",
+  "result": {
+    "risk_level": "medium",
+    "issues": [
+      {
+        "clause": "第7.3条 违约责任",
+        "risk": "违约金比例过高(30%)",
+        "suggestion": "建议降至10-15%"
+      }
+    ],
+    "summary": "发现3处中等风险条款..."
+  },
+  "usage": { "tokens": 2847, "cost": 0.42 }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Network Visualization -->
+  <div class="space-y-4">
+    <h2 class="text-lg font-semibold text-white">协作网络拓扑</h2>
+    <div class="rounded-2xl border border-white/[0.06] bg-gray-900/60 backdrop-blur-xl p-8 flex items-center justify-center min-h-[300px] relative overflow-hidden">
+      <!-- Central node -->
+      <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 float">
+          <div class="text-center">
+            <span class="text-white font-bold text-lg block">我</span>
+            <span class="text-indigo-200 text-[9px]">3 服务</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connected orgs -->
+      <div class="absolute left-[15%] top-[25%] float-delay">
+        <div class="w-14 h-14 rounded-xl bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+          <span class="text-green-400 font-bold text-sm">云税</span>
+        </div>
+        <div class="text-[9px] text-gray-500 text-center mt-1">财税申报</div>
+      </div>
+      <div class="absolute right-[15%] top-[20%] float">
+        <div class="w-14 h-14 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
+          <span class="text-blue-400 font-bold text-sm">猎才</span>
+        </div>
+        <div class="text-[9px] text-gray-500 text-center mt-1">简历筛选</div>
+      </div>
+      <div class="absolute left-[20%] bottom-[20%] float">
+        <div class="w-14 h-14 rounded-xl bg-orange-500/20 border border-orange-500/30 flex items-center justify-center">
+          <span class="text-orange-400 font-bold text-sm">企查</span>
+        </div>
+        <div class="text-[9px] text-gray-500 text-center mt-1">资质核验</div>
+      </div>
+      <div class="absolute right-[18%] bottom-[25%] float-delay">
+        <div class="w-14 h-14 rounded-xl bg-pink-500/20 border border-pink-500/30 flex items-center justify-center">
+          <span class="text-pink-400 font-bold text-sm">客户A</span>
+        </div>
+        <div class="text-[9px] text-gray-500 text-center mt-1">订阅方</div>
+      </div>
+      <div class="absolute right-[40%] top-[12%] float">
+        <div class="w-14 h-14 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center">
+          <span class="text-cyan-400 font-bold text-sm">客户B</span>
+        </div>
+        <div class="text-[9px] text-gray-500 text-center mt-1">订阅方</div>
+      </div>
+
+      <!-- Connection lines (decorative) -->
+      <svg class="absolute inset-0 w-full h-full" style="z-index:1">
+        <line x1="50%" y1="50%" x2="15%" y2="25%" stroke="rgba(34,211,238,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+        <line x1="50%" y1="50%" x2="85%" y2="20%" stroke="rgba(34,211,238,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+        <line x1="50%" y1="50%" x2="20%" y2="80%" stroke="rgba(34,211,238,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+        <line x1="50%" y1="50%" x2="82%" y2="75%" stroke="rgba(34,211,238,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+        <line x1="50%" y1="50%" x2="60%" y2="12%" stroke="rgba(34,211,238,0.15)" stroke-width="1" stroke-dasharray="4 4"/>
+      </svg>
+    </div>
+  </div>
+
+</div>
+</main>
+</body>
+</html>

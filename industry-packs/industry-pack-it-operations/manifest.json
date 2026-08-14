@@ -1,0 +1,139 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2025-01-21T10:00:00.000Z",
+  "generator": "super-agent-batch-v2",
+  "industry": {
+    "id": "it-operations",
+    "name": "IT 运维",
+    "icon": "🖥️",
+    "color": "#EF4444"
+  },
+  "stats": {
+    "scopeCount": 4,
+    "agentCount": 15,
+    "skillCount": 51,
+    "workflowCount": 4,
+    "twinCount": 2,
+    "sopCount": 4
+  },
+  "scopes": [
+    {
+      "dirName": "incident-response",
+      "name": "故障响应",
+      "agents": [
+        "alert-triage-agent",
+        "incident-commander-agent",
+        "rca-agent",
+        "postmortem-agent"
+      ],
+      "skills": [
+        "alert-aggregation",
+        "alert-severity-classification",
+        "alert-routing",
+        "war-room-management",
+        "escalation-management",
+        "incident-communication",
+        "change-correlation-analysis",
+        "distributed-tracing-analysis",
+        "log-pattern-analysis",
+        "recovery-recommendation",
+        "timeline-reconstruction",
+        "five-why-analysis",
+        "impact-quantification",
+        "action-tracking"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "change-management",
+      "name": "变更管理",
+      "agents": [
+        "change-assessment-agent",
+        "change-approval-agent",
+        "change-execution-agent",
+        "change-analytics-agent"
+      ],
+      "skills": [
+        "change-impact-analysis",
+        "risk-scoring",
+        "rollback-validation",
+        "approval-routing",
+        "change-calendar-management",
+        "compliance-check",
+        "pre-check-execution",
+        "canary-release-monitoring",
+        "rollback-management",
+        "change-metrics-analysis",
+        "pattern-recognition",
+        "continuous-improvement"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "daily-inspection-monitoring",
+      "name": "日常巡检与监控",
+      "agents": [
+        "inspection-agent",
+        "capacity-planning-agent",
+        "monitoring-optimization-agent"
+      ],
+      "skills": [
+        "daily-inspection-execution",
+        "anomaly-detection-analysis",
+        "inspection-report-generation",
+        "capacity-trend-modeling",
+        "resource-optimization-analysis",
+        "capacity-report-generation",
+        "monitoring-coverage-assessment",
+        "alert-quality-optimization",
+        "observability-governance"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "security-operations",
+      "name": "安全运维",
+      "agents": [
+        "security-event-agent",
+        "vulnerability-management-agent",
+        "access-control-agent",
+        "compliance-audit-agent"
+      ],
+      "skills": [
+        "threat-analysis",
+        "incident-response-coordination",
+        "forensics-preservation",
+        "alert-correlation",
+        "vulnerability-assessment",
+        "patch-management",
+        "risk-prioritization",
+        "remediation-planning",
+        "access-audit",
+        "privilege-account-management",
+        "anomaly-detection",
+        "iam-compliance-check",
+        "compliance-baseline-check",
+        "gap-analysis",
+        "evidence-collection",
+        "regulation-tracking"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    }
+  ],
+  "digitalTwins": [
+    {
+      "dirName": "技术运维总监",
+      "name": "技术运维总监",
+      "role": "VP of Engineering / SRE Director"
+    },
+    {
+      "dirName": "信息安全总监",
+      "name": "信息安全总监",
+      "role": "CISO (Chief Information Security Officer)"
+    }
+  ]
+}

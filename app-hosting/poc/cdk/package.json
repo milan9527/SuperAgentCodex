@@ -1,0 +1,19 @@
+{
+  "name": "app-host-poc-cdk",
+  "version": "0.1.0",
+  "bin": {
+    "poc": "bin/poc.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.150.0",
+    "aws-cdk-lib": "^2.150.0",
+    "constructs": "^10.3.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0"
+  }
+}

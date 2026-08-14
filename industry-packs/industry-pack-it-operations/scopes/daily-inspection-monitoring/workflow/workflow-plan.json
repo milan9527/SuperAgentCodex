@@ -1,0 +1,552 @@
+{
+  "title": "日常巡检与监控工作流",
+  "description": "覆盖每日自动巡检、月度容量评估、季度监控治理和事件驱动专项巡检的完整工作流程，实现IT基础设施从被动响应到主动预防的持续性健康监测体系。",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "每日定时触发巡检任务",
+      "type": "action",
+      "prompt": "在每日06:00自动触发巡检任务。加载当日巡检模板（标准模板约200个检查项），确认所有数据源（Prometheus、Zabbix、CloudWatch、APM、日志平台）连接状态，初始化巡检任务跟踪记录。如果是工作日则执行标准巡检模板，如果是大促前7天或重大变更后则同时加载专项巡检模板。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "inspection-agent",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "scheduler",
+          "prometheus",
+          "zabbix",
+          "cloudwatch"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "多源数据采集",
+      "type": "agent",
+      "prompt": "并行连接各监控数据源执行全量数据采集。基础设施层：采集所有服务器的CPU、内存、磁盘使用率和网络I/O。数据库层：采集连接数、慢查询统计（>1s）、主从延迟、锁等待。网络层：采集核心链路带宽利用率、延迟、丢包率。应用层：采集响应时间P50/P95/P99、错误率、QPS。业务层：采集交易成功率、转化率。单源超时30秒则重试3次后标记为未完成。总采集时间控制在25分钟内。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "inspection-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "prometheus",
+          "zabbix",
+          "cloudwatch",
+          "apm",
+          "log-platform"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "异常检测与关联分析",
+      "type": "agent",
+      "prompt": "对采集到的指标数据执行多维度异常检测。第一步：静态阈值比对（CPU>80%持续5分钟、磁盘>85%、慢查询>100条/小时、错误率>1%、P99>3s）。第二步：动态基线比对（与7天同期均值对比，偏离>2个标准差标记异常）。第三步：趋势恶化识别（30天线性回归，预计30天内触及阈值标记为趋势告警）。第四步：跨层关联分析（应用响应变慢时同步检查数据库和网络层，构建异常传播链）。输出每个异常项的严重程度分级：Critical/Warning/Trending。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "inspection-agent",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "异常严重程度判定",
+      "type": "agent",
+      "prompt": "根据异常检测结果判定处理路径。条件1：存在Critical级异常（核心服务指标超阈值且持续时间满足条件）→ 立即推送告警至故障响应Scope。条件2：存在安全类异常（异常登录、权限变更、可疑进程）→ 同步通知安全运维Scope。条件3：仅存在Warning级和Trending级异常 → 正常纳入巡检报告。条件4：无任何异常 → 生成全绿报告。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "inspection-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "严重异常即时告警推送",
+      "type": "action",
+      "prompt": "对检测到的Critical级严重异常，在1分钟内推送至故障响应Scope的告警分诊Agent。推送内容包括：异常指标名称和当前值、阈值对比、持续时间、影响面评估（涉及的服务和用户范围）、跨层关联分析结果、初步建议（如近期是否有变更可能导致此异常）。推送同时通知当前OnCall运维工程师。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "inspection-agent",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "incident-response-scope",
+          "notification-service"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "生成每日巡检报告",
+      "type": "agent",
+      "prompt": "整合巡检数据和异常分析结果，生成结构化每日巡检报告。报告包含：执行摘要（一句话健康评估+健康评分0-100）、告警项（需立即处理的Critical/Warning项，含指标详情和建议操作）、风险项（趋势恶化和需关注项）、优化建议项、正常项汇总。同时生成面向业务负责人的摘要版（不超过500字）。标注与前一日对比的变化（新增异常/已恢复项/持续恶化项）。报告需在07:00前完成初稿。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "inspection-agent",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "报告人工审核与发送",
+      "type": "action",
+      "prompt": "将报告初稿提交给值班运维工程师进行审核确认。审核内容：异常标注是否准确（无误判/遗漏）、建议操作是否合理、需要补充的业务上下文。审核通过后在09:00前发送最终报告：完整版通过邮件发送给运维团队，摘要版通过企业IM（企业微信/钉钉/飞书）发送给业务负责人。记录发送时间和接收确认。如果审核发现问题需要修正，在修正后重新发送。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "inspection-agent",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "email",
+          "im-platform"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "月度容量数据采集与预处理",
+      "type": "agent",
+      "prompt": "在每月第一个工作日启动月度容量评估流程。采集目标范围内所有资源（计算/存储/网络/数据库）的近90天历史使用数据（1小时粒度）。执行数据预处理：缺失值插值处理、3σ异常点剔除、标记已知事件（历史故障/大促/扩容操作时间点）排除其对趋势的干扰。验证数据质量，缺失率>10%的需标注并降低预测置信度。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "capacity-planning-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "prometheus",
+          "cloudwatch",
+          "cost-management"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "容量趋势建模与预测",
+      "type": "agent",
+      "prompt": "基于预处理后的90天历史数据进行容量趋势建模。第一步：STL时序分解（趋势项+季节项+残差项）。第二步：对趋势项进行线性回归，计算日增长率和周增长率。第三步：获取业务增长计划和大促日历，叠加业务增长因子。第四步：预测未来90天各资源使用率曲线，计算触达黄色预警线（CPU70%/内存80%/磁盘85%）和红色告警线的日期。第五步：模型验证，R²≥0.7方可采用，否则尝试分段拟合。输出乐观/基准/悲观三个场景的预测结果和95%置信区间。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "capacity-planning-agent",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "容量预警等级判定",
+      "type": "agent",
+      "prompt": "根据容量预测结果判定预警等级和处理路径。条件1：30天内触达红色水位线 → 生成紧急扩容申请，提交变更管理Scope。条件2：30-60天内触达水位线 → 标记为重点关注，纳入月度扩容计划。条件3：60天以上 → 记录趋势持续监测。条件4：存在资源浪费（CPU<10%且内存<20%持续30天）→ 启动缩容评估。大促前的专项评估：根据流量预估倍数×当前峰值，判断是否需要临时扩容。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "capacity-planning-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "资源优化分析",
+      "type": "agent",
+      "prompt": "识别资源浪费并制定优化方案。扫描所有实例的30天利用率画像，筛选极低利用率实例（CPU<10%且内存<20%）。对每个低利用率实例执行合理性排查：是否为灾备/容灾实例、是否有定时批处理任务峰值、是否为业务预留buffer、是否为新部署尚未接入流量。排除合理场景后，对确认的浪费实例制定优化方案：释放（30天无使用）、降配（利用率<30%则推荐满足P95+30%余量的最小规格）、合并（同业务多个低利用率实例）。计算每个优化项的月度/年度节省成本。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "capacity-planning-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "cmdb",
+          "cost-management"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "生成月度容量评估报告",
+      "type": "agent",
+      "prompt": "整合容量趋势预测和资源优化分析结果，生成月度容量评估报告。报告内容：资源使用现状概览（按资源类型和业务线维度）、趋势预测与预警（30/60/90天预警项排序）、扩容建议（具体规格/数量/时间/至少2个备选方案）、缩容建议（含成本节省估算和风险评估）、成本分析（当前成本/预估变化/ROI）。尾部列出需要管理层决策的事项清单。报告需在月度第5个工作日前完成，运维主管审核后发送给相关干系人。",
+      "dependentTasks": [
+        "task-9",
+        "task-10",
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "capacity-planning-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "email"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "扩容变更申请提交",
+      "type": "action",
+      "prompt": "对确认需要扩容的资源，将扩容建议转化为标准变更申请提交至变更管理Scope。变更申请内容包括：变更原因（容量预测数据支撑）、扩容规格和数量、建议执行时间窗口、回滚方案（缩容回原规格）、成本预算、优先级（30天内紧急/60天内计划）。紧急扩容（30天内触达）标记为高优先级，走加速审批流程。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "capacity-planning-agent",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "change-management-scope"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "季度监控覆盖率评估",
+      "type": "agent",
+      "prompt": "每季度执行一次全面的监控覆盖率评估。第一步：从CMDB导出当前所有在线资产清单和服务目录。第二步：从各监控系统（Prometheus/Zabbix/CloudWatch/APM）获取已接入监控的对象列表。第三步：交叉比对，按三个维度计算覆盖率：按系统重要性（核心/非核心）、按监控层级（基础设施/应用/业务）、按Golden Signals完整度。第四步：识别监控盲区（完全未覆盖/仅基础覆盖/缺失业务指标）。第五步：为每个未覆盖项生成接入方案（推荐工具/关键指标/建议阈值）。核心系统覆盖率目标100%，非核心95%。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "monitoring-optimization-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "cmdb",
+          "prometheus",
+          "zabbix",
+          "cloudwatch",
+          "apm"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "告警质量分析与优化",
+      "type": "agent",
+      "prompt": "对近30天的全量告警数据进行质量分析。第一步：采集告警记录（触发时间/恢复时间/处理结果/人工反馈）。第二步：计算每条规则的有效率（需人工介入/总触发）和整体指标（准确率/噪声比/人均日告警量）。第三步：识别问题规则：有效率<50%的高噪声规则、日触发>10次的频繁规则、90天未触发的失效规则。第四步：回溯同期故障记录发现漏报（故障前无对应告警触发）。第五步：对每个问题规则输出优化建议：调整阈值（给出建议值）、增加持续窗口、配置抑制规则、新增缺失规则。预估优化后的改善效果。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "monitoring-optimization-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "alertmanager",
+          "incident-management"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "监控覆盖率是否达标",
+      "type": "agent",
+      "prompt": "评估监控覆盖率是否达到目标值。条件1：核心系统覆盖率<100% → 升级为P0优先级，立即启动补全流程，运维主管审批。条件2：非核心系统覆盖率<95% → 生成补全计划，纳入季度改进路线图，指定Owner和Deadline。条件3：告警噪声比>30% → 标记为紧急优化项，2周内完成首批规则优化。条件4：所有指标达标 → 记录基线，进入常规维护模式。",
+      "dependentTasks": [
+        "task-14",
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "monitoring-optimization-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 400,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "生成监控补全计划",
+      "type": "document",
+      "prompt": "对监控覆盖率不达标的服务生成具体的监控补全计划。每项包含：目标服务/组件名称、当前监控状态（完全缺失/部分覆盖/Golden Signals不完整）、补全方案（推荐接入的监控工具、需采集的关键指标列表、建议告警阈值）、实施复杂度评估、预计工时、责任Owner、完成截止日期。按优先级排序：核心系统P0（1周内）→ 重要系统P1（2周内）→ 一般系统P2（季度内）。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "monitoring-optimization-agent",
+        "originalType": "document",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "输出告警规则优化方案",
+      "type": "document",
+      "prompt": "基于告警质量分析结果，输出具体的告警规则优化方案文档。内容包括：优化规则清单（规则名/当前阈值/建议阈值/修改原因/预期效果）、新增规则清单（针对漏报场景）、抑制规则配置（针对告警风暴）、优化执行计划（分批次，先非核心系统验证再推广核心系统）、预期效果（告警数量预计减少百分比、准确率预计提升值）。方案需经运维主管评审确认后，提交给告警管理平台执行配置变更。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "monitoring-optimization-agent",
+        "originalType": "document",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "季度监控治理报告",
+      "type": "agent",
+      "prompt": "整合本季度的监控覆盖率评估、告警质量分析、大盘合规性检查结果，生成季度监控治理报告。报告内容：可观测性成熟度评分（L1-L5）及变化、覆盖率达标情况及趋势、告警质量指标及改善情况、监控大盘合规率、故障复盘改进Action跟踪状态（完成/进行中/逾期）、监控数据存储成本及优化建议、下季度改进路线图（具体改进项/Owner/里程碑）。标注需要技术投入决策的事项（如引入新监控工具）。",
+      "dependentTasks": [
+        "task-14",
+        "task-15",
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "monitoring-optimization-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "email"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 700
+      }
+    },
+    {
+      "id": "task-20",
+      "title": "专项巡检触发与执行",
+      "type": "agent",
+      "prompt": "响应事件驱动的专项巡检请求。触发场景：大促前7天（压力评估）或重大架构变更后24小时内（稳定性验证）。执行步骤：确定巡检范围和目标系统 → 加载专项巡检模板 → 以1分钟粒度深度采集目标系统指标 → 大促场景对比预估流量与容量余量计算资源缺口/变更场景对比变更前基线验证核心指标无显著偏移 → 识别单点故障风险和容量瓶颈 → 输出风险清单（按高/中/低分级）→ 指定整改Owner和Deadline → 每日跟踪整改进度直至闭环。所有高风险项必须在大促前或上线前100%整改完成。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "inspection-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "prometheus",
+          "apm",
+          "cmdb"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 700
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-3",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-8",
+      "target": "task-11"
+    },
+    {
+      "source": "task-9",
+      "target": "task-12"
+    },
+    {
+      "source": "task-10",
+      "target": "task-12"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-10",
+      "target": "task-13"
+    },
+    {
+      "source": "task-14",
+      "target": "task-16"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-16",
+      "target": "task-17"
+    },
+    {
+      "source": "task-16",
+      "target": "task-18"
+    },
+    {
+      "source": "task-14",
+      "target": "task-19"
+    },
+    {
+      "source": "task-15",
+      "target": "task-19"
+    },
+    {
+      "source": "task-16",
+      "target": "task-19"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "inspectionType",
+      "value": "",
+      "description": "巡检类型：daily（每日自动）、special（专项）、deep（深度季度）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "alertThresholds",
+      "value": "",
+      "description": "告警阈值配置，包含CPU(80%)、磁盘(85%)、慢查询(100/h)、错误率(1%)、P99(3s)等",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-3",
+      "name": "reportRecipients",
+      "value": "",
+      "description": "巡检报告接收人列表，包含运维团队和业务负责人的联系方式和角色",
+      "required": true,
+      "variableType": "array"
+    },
+    {
+      "variableId": "var-4",
+      "name": "capacityWatermarks",
+      "value": "",
+      "description": "容量水位线配置：CPU黄线70%红线80%、内存黄线80%红线90%、磁盘黄线85%红线90%",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-5",
+      "name": "businessCalendar",
+      "value": "",
+      "description": "业务日历事件列表，包含大促日期、新业务上线计划、流量预估倍数",
+      "required": false,
+      "variableType": "array"
+    },
+    {
+      "variableId": "var-6",
+      "name": "monitoringCoverageTargets",
+      "value": "",
+      "description": "监控覆盖率目标配置：核心系统100%、非核心系统95%",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-7",
+      "name": "dataRetentionPolicy",
+      "value": "",
+      "description": "监控数据保留策略：原始数据15天、1分钟聚合90天、1小时聚合1年",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-8",
+      "name": "specialInspectionTrigger",
+      "value": "",
+      "description": "专项巡检触发条件：事件类型（大促/变更/指令）、目标范围、截止时间",
+      "required": false,
+      "variableType": "object"
+    }
+  ]
+}

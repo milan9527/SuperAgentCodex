@@ -1,0 +1,554 @@
+{
+  "title": "知识产权全生命周期管理工作流",
+  "description": "覆盖专利申请管理、商标注册管理、IP资产运维和侵权应对的端到端工作流程，确保企业知识产权资产从创造到保护的全流程高效运转",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "技术交底书受理与初审",
+      "type": "agent",
+      "prompt": "接收研发部门提交的技术交底书，检查完整性（技术方案描述、技术效果说明、与现有技术的区别、附图等必要内容）。对不完整的交底书列出补充要求并退回。对完整的交底书进行登记编号，在3个工作日内完成初步可行性评估，给出是否值得进一步检索分析的初步意见。输出：受理确认函和初步评估意见。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "技术交底书管理系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "专利检索分析",
+      "type": "agent",
+      "prompt": "基于技术交底书中的核心技术方案，制定检索策略并执行专利检索。要求：使用至少3个专利数据库（如CNIPA、USPTO、WIPO），构建至少5组不同的检索式（关键词+IPC/CPC分类号组合），对检索结果筛选出高相关文献并进行详细技术特征对比。输出完整的检索报告，包含：检索策略说明、所有检索式记录、对比文件清单（按X/Y/A相关度分级）、新颖性和创造性初步判断。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CNIPA专利数据库",
+          "WIPO PATENTSCOPE",
+          "USPTO"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "可申请性评估决策",
+      "type": "agent",
+      "prompt": "基于专利检索报告的结果，对技术方案进行三性评估（新颖性、创造性、实用性），每项满分10分。根据总分做出决策：总分≥25分为高价值方案（优先申请），18-24分为一般价值（排队申请），<18分不建议申请。对于不建议申请的方案，说明理由并建议研发方向调整。对于建议申请的方案，进入申请策略制定环节。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "专利申请策略制定",
+      "type": "agent",
+      "prompt": "对通过可申请性评估的技术方案制定完整的申请策略。包括：1）专利类型选择（发明/实用新型/外观设计/双报策略）及理由；2）申请路径规划（国内直接/巴黎公约/PCT）及时间线；3）权利要求层次设计（独立权利要求保护范围、从属权利要求限缩层次≥5项）；4）预算估算（官费+代理费+海外费用）；5）风险提示。输出《专利申请策略书》供审批。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "申请文件撰写审核与提交",
+      "type": "agent",
+      "prompt": "根据申请策略书指导申请文件的撰写（或审核代理机构撰写的文件）。审核要点：独立权利要求是否覆盖核心技术方案、从属权利要求是否≥5项且层次合理、说明书对每项权利要求是否有充分支持、附图是否清晰规范。审核通过后通过电子申请系统提交，获取申请号并通知IP资产运维管理员录入台账。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "电子专利申请系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "专利申请台账登记与时限设置",
+      "type": "agent",
+      "prompt": "收到新专利申请提交确认后，在IP资产台账中创建新记录，录入：申请号、名称、申请日、发明人、技术领域（IPC分类）、申请类型、代理机构等信息。同时设置后续关键时限监控点：预计公开日（申请日+18个月）、实审请求期限（申请日+3年内）、可能的OA答复期限。确保所有时限纳入监控系统。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "ip-portfolio-administrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "IP资产管理系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "审查意见接收与分析",
+      "type": "agent",
+      "prompt": "收到国家知识产权局下发的审查意见通知书（OA）后：1）24小时内录入系统并计算答复法定期限；2）通知专利战略分析师；3）15日内完成OA深度分析——逐条解读审查员引用的对比文件和指出的缺陷（新颖性/创造性/形式问题），评估审查意见的合理性；4）制定答复策略（争辩/修改/组合）并给出授权前景预判。输出OA分析报告和答复策略建议。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CNIPA审查系统通知"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "审查意见答复文件提交",
+      "type": "agent",
+      "prompt": "根据确定的答复策略撰写意见陈述书和修改后的权利要求（如需修改）。确保：答复逻辑清晰有力、修改不超出原始公开范围、与前次答复保持一致性。完成内部交叉审核后，在法定期限前15天通过电子系统提交答复。提交后更新台账状态并设置下一轮OA或授权通知的监控。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "电子专利申请系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "年费与续展时限监控",
+      "type": "agent",
+      "prompt": "执行日常时限监控任务：1）检查未来90天内到期的所有时限事项（专利年费、商标续展、OA答复期限等）；2）按多层提醒机制发出通知（90天/60天/30天/7天）；3）跟踪已通知事项的执行状态，确认是否已完成缴费/续展；4）对逾期风险事项立即升级通知管理层。生成月度时限管理报告，统计本月到期事项总数、完成率、预警次数。目标：逾期率=0。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "ip-portfolio-administrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "IP资产管理系统",
+          "费用支付系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "商标注册近似检索",
+      "type": "agent",
+      "prompt": "收到商标注册需求后，在商标局官方数据库执行全面的近似检索。检索范围必须覆盖：相同商标在相同商品/服务上、近似商标在相同商品/服务上、相同商标在类似商品/服务上、近似商标在类似商品/服务上。按文字商标（读音/字形/含义）和图形商标（构图/设计）分别判断近似度。输出近似检索报告，包含：近似商标清单、风险等级评估（高/中/低）、注册通过率预判、策略建议（调整/继续）。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "ip-portfolio-administrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "商标局数据库"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "商标注册风险决策",
+      "type": "agent",
+      "prompt": "根据近似检索结果评估是否继续推进注册：通过率>60%（低风险）→直接提交申请；通过率30-60%（中风险）→建议修改商标或调整类别后重新检索；通过率<30%（高风险）→强烈建议更换商标或制定替代方案。对于中高风险情况，提供具体的修改建议和替代策略。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "ip-portfolio-administrator",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "商标申请提交与跟踪",
+      "type": "agent",
+      "prompt": "准备商标注册申请材料（清晰商标图样、申请人信息、规范的商品/服务清单）并通过电子系统提交。获取受理通知书后录入IP资产台账，设置审查流程监控节点。每月检查审查进度，对可能出现的驳回、异议情况提前做好应对准备。如收到驳回通知，15日内完成复审评估；如被异议，30日内准备答辩材料。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "ip-portfolio-administrator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "商标电子申请系统",
+          "IP资产管理系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "侵权监控与线索发现",
+      "type": "agent",
+      "prompt": "执行定期侵权监控任务：1）线上监控——在主要电商平台（淘宝/京东/拼多多/1688等）使用品牌关键词和产品关键词搜索疑似侵权产品，进行图片比对；2）技术监控——追踪竞品新发布的产品/技术文档，与我方核心专利权利要求进行初步技术特征比对；3）舆情监控——关注行业新闻和社交媒体中可能涉及我方IP的信息。对发现的每条疑似侵权线索建立记录卡，给出初步侵权可能性判断（高度疑似/可能/存疑），按严重程度分级上报。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "ip-enforcement-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "电商平台监控工具",
+          "竞品情报系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "侵权确认与技术比对",
+      "type": "agent",
+      "prompt": "对初步判定为'高度疑似侵权'的线索进行深入技术比对分析。提取我方专利独立权利要求的全部技术特征，逐一与疑似侵权产品/方法的对应技术特征进行比对。采用全面覆盖原则：所有技术特征均被覆盖（相同或等同）→确认侵权；缺少必要技术特征→进一步分析等同侵权可能性。输出详细的侵权比对分析报告，明确结论（确认侵权/不构成侵权/存在争议需进一步分析）。确认侵权的立即触发证据保全流程。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "ip-enforcement-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 400,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "侵权证据保全启动判断",
+      "type": "agent",
+      "prompt": "根据侵权比对分析结论决定后续行动：确认侵权→立即启动证据保全流程（48小时内必须执行）；存在争议→安排补充分析后再决定；不构成侵权→记录分析结果并归档，继续监控。对于确认侵权的情况，同时评估侵权规模和紧迫性，确定证据保全的优先方式。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "ip-enforcement-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "证据保全执行",
+      "type": "agent",
+      "prompt": "确认侵权后48小时内启动证据保全。根据侵权类型选择保全方式：线上侵权→网页公证+时间戳存证；产品侵权→公证购买；制造端侵权→配合行政执法现场取证。执行要点：1）联系公证处预约公证员；2）公证员全程见证取证过程；3）记录完整的时间、地点、对象信息；4）检查证据链完整性（侵权行为+侵权规模+侵权方身份）；5）证据编号归档并制作证据清单。输出：公证书/存证证书+证据清单+证据链分析报告。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "ip-enforcement-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "公证处预约系统",
+          "电子存证平台"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "维权策略制定与审批",
+      "type": "agent",
+      "prompt": "证据保全完成后，综合评估制定最优维权策略。评估要素：1）我方权利稳定性（被无效风险）；2）证据充分性；3）侵权规模和预期赔偿；4）维权成本预算；5）与侵权方的商业关系；6）行业影响。路径选择：行政投诉（快速制止，3-6个月）/民事诉讼（求偿，12-18个月）/协商和解（保护关系）/刑事报案（严重案件）。输出《维权策略建议书》包含：案件概述、权利基础、侵权事实、路径分析、成本收益比、推荐方案及备选方案，提交管理层审批。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "ip-enforcement-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "IP资产组合报告生成",
+      "type": "document",
+      "prompt": "从IP资产台账提取最新数据，生成季度IP资产组合分析报告。报告内容：1）资产总量概览（各类型数量、有效/申请中/失效分布）；2）本季度变动（新增/授权/放弃/失效）；3）地域分布分析；4）技术领域分布；5）费用支出统计与预测；6）生命周期分析（资产年龄分布、即将到期资产）；7）竞争对标数据；8）问题识别与优化建议。同时生成一页纸的管理层摘要，突出关键数据变化和需要决策的事项。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "ip-portfolio-administrator",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "IP资产管理系统",
+          "数据可视化工具"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "竞争对手专利动态分析",
+      "type": "agent",
+      "prompt": "执行月度竞争对手专利动态监控。对核心竞争对手名单中的每一家企业：1）检索其最新公开/公告的专利申请；2）追踪已有专利的法律状态变更；3）分析新申请的技术方向和布局意图；4）识别可能影响我方FTO的专利（紧急预警）。输出月度竞品专利动态简报，包含：新申请/授权数据汇总、技术方向变化分析、FTO风险预警（如有）、我方布局建议。对于发现的FTO风险，24小时内发出单独预警通知。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "专利数据库",
+          "竞争情报系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 700
+      }
+    },
+    {
+      "id": "task-20",
+      "title": "被控侵权紧急响应",
+      "type": "agent",
+      "prompt": "收到侵权指控（警告函/起诉状/行政通知）后启动紧急响应流程：1）24小时内通知法务总监和相关部门；2）收集对方权利信息（专利号/商标号、权利要求/注册范围）；3）初步收集我方被指控产品/技术的信息；4）72小时内出具《紧急风险评估报告》，内容包括：指控概述、对方权利初步审查、我方初步侵权风险判断（高/中/低）、是否需要暂停产品建议、后续深入分析计划。同步通知专利战略分析师准备深入的不侵权分析和无效检索。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "ip-enforcement-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "法务案件管理系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 850
+      }
+    },
+    {
+      "id": "task-21",
+      "title": "被控侵权深度分析与防御策略",
+      "type": "agent",
+      "prompt": "在紧急响应基础上进行深度分析：1）对方权利有效性检索（寻找可能影响其新颖性/创造性的现有技术，评估无效宣告可行性）；2）我方产品/技术与对方权利要求的逐条详细比对（全面覆盖原则+等同原则）；3）可能的抗辩事由梳理（不侵权/现有技术/先用权/合法来源）；4）设计规避方案可行性评估。输出：侵权比对分析报告、无效检索报告、防御策略方案（推荐策略+备选+各策略成本时间预估），提交管理层决策。",
+      "dependentTasks": [
+        "task-20"
+      ],
+      "metadata": {
+        "agentRef": "patent-strategy-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "专利数据库"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 700
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-16",
+      "target": "task-17"
+    },
+    {
+      "source": "task-9",
+      "target": "task-18"
+    },
+    {
+      "source": "task-20",
+      "target": "task-21"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "technicalDisclosure",
+      "value": "",
+      "description": "研发部门提交的技术交底书内容",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "patentSearchReport",
+      "value": "",
+      "description": "专利检索报告全文，包含检索策略和对比分析结论",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "patentabilityScore",
+      "value": "",
+      "description": "可申请性评估总分（新颖性+创造性+实用性）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "applicationStrategy",
+      "value": "",
+      "description": "专利申请策略书内容（类型/路径/权利要求布局）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "trademarkName",
+      "value": "",
+      "description": "待注册的商标名称或图样描述",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "trademarkClasses",
+      "value": "",
+      "description": "商标指定的商品/服务类别编号",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "infringementEvidence",
+      "value": "",
+      "description": "侵权证据材料和证据清单",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "competitorList",
+      "value": "",
+      "description": "核心竞争对手名单及监控范围",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-9",
+      "name": "infringementClaim",
+      "value": "",
+      "description": "收到的侵权指控文件（警告函/起诉状）内容",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-10",
+      "name": "ipAssetId",
+      "value": "",
+      "description": "IP资产内部编号，用于台账查询和状态更新",
+      "required": false,
+      "variableType": "string"
+    }
+  ]
+}

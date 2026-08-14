@@ -1,0 +1,541 @@
+{
+  "title": "投诉管理全流程工作流",
+  "description": "覆盖投诉从受理、分级、处理、补偿到根因分析的完整生命周期工作流，包含一般投诉、重大投诉和监管投诉三条处理通道，以及舆情监控和改进跟踪的持续运营流程。",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "投诉接收与信息登记",
+      "type": "agent",
+      "prompt": "接收来自各渠道（客户直诉、工单升级、外部平台、监管转办）的投诉信息。创建投诉工单，提取投诉核心要素：投诉对象、事件描述、客户诉求、涉及金额。关联客户ID并获取客户基本信息（价值等级、历史投诉记录）。确保投诉原始内容完整保存，不做编辑或摘要替代。输出结构化的投诉受理记录。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "complaint-intake-classifier",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "工单系统",
+          "外部平台API"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "情感分析与情绪评估",
+      "type": "agent",
+      "prompt": "对投诉文本进行情感分析，评估客户情绪强度（1-5级）。识别情绪关键词、分析威胁程度、评估舆情扩散风险。结合客户历史交互态度变化趋势，输出情绪评分和推荐的沟通策略。对于情绪强度≥4级的客户标记为高风险，建议优先处理。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "complaint-intake-classifier",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "NLP引擎"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "重复投诉识别",
+      "type": "agent",
+      "prompt": "查询客户30天内的历史投诉记录，判断当前投诉是否为重复投诉（同一客户+同一问题类型）。如确认为重复投诉，标记并关联历史投诉编号，自动触发升级为重大投诉的流程。输出重复投诉判定结果和关联的历史案件信息。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "complaint-intake-classifier",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "投诉数据库"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "投诉分级判定",
+      "type": "agent",
+      "prompt": "综合投诉内容分析、情感评估结果和重复投诉判定，按分级规则执行严重程度判定。一般投诉：体验问题无实质损失；重大投诉：资金损失>100元、隐私泄露、安全事故、重复投诉、VIP客户；监管投诉：12315/银保监/黑猫投诉等外部平台、律师函、媒体曝光。存疑时按就高原则处理。输出投诉等级、SLA时限要求和建议处理通道。",
+      "dependentTasks": [
+        "task-2",
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "complaint-intake-classifier",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "投诉分派路由",
+      "type": "agent",
+      "prompt": "根据投诉分级结果执行路由分派：一般投诉分配至普通处理队列，SLA为3个工作日；重大投诉分配至高级专员并通知主管，SLA为24小时响应+5工作日；监管投诉立即启动合规流程，2小时内上报管理层。同时启动SLA倒计时并设置多级预警。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "complaint-intake-classifier",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "工单路由系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "监管投诉上报与合规启动",
+      "type": "agent",
+      "prompt": "对分级为监管投诉的案件，在2小时内完成管理层上报。计算法定时限（12315为7工作日、银保监为15工作日等），设置50%/80%/90%多级预警时间点。启动合规处理流程并建立合规台账记录。通知相关部门优先配合调查取证。确保上报记录完整并可追溯。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "regulatory-compliance",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "内部通讯系统",
+          "合规管理系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "调查取证与事实还原",
+      "type": "agent",
+      "prompt": "根据投诉类型确定需要调取的证据源（通话录音、聊天记录、系统操作日志、交易流水、物流记录等），进行全面取证。按时间顺序重建事件经过，交叉验证多源证据一致性。识别证据缺失点，明确标注确认事实和待确认推断。判定责任归属（企业责任/客户责任/第三方责任/混合责任），输出调查报告。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "complaint-resolution",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "通话录音系统",
+          "聊天记录系统",
+          "操作日志系统",
+          "交易系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "补偿方案制定",
+      "type": "agent",
+      "prompt": "基于调查结论、客户价值等级和企业责任程度，设计补偿方案。选择合适的补偿工具组合（代金券/退款/服务升级/实物赠品等），计算补偿金额（基础补偿+体验补偿+挽留溢价）。确定所需审批层级（≤100元自审/101-500元组长/501-2000元主管/>2000元总监）。同时准备备选方案供客户不接受时使用。输出补偿方案建议书含成本分析。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "complaint-resolution",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "客户价值系统",
+          "补偿预算系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "补偿方案审批流转",
+      "type": "agent",
+      "prompt": "判断补偿方案是否超出当前处理人员的审批权限。如在权限范围内（≤100元），直接进入执行阶段。如超出权限，准备审批材料（方案详情+依据说明+成本分析+客户信息+风险评估），提交至对应审批层级。监控审批进度，超过2小时未审批自动催办，超过4小时自动升级。处理审批结果：通过则执行、驳回则调整方案、有条件通过则按调整金额执行。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "complaint-resolution",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "审批流程系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "客户沟通与方案协商",
+      "type": "agent",
+      "prompt": "按照LAST沟通模型（倾听-确认-共情-行动）与客户进行投诉处理沟通。首次联系时效：一般投诉4小时内、重大投诉2小时内、监管投诉1小时内。清晰说明调查结论和补偿方案，管理客户预期。记录客户反馈（接受/不接受/需考虑），对不接受方案的客户了解其期望并评估调整空间。每次沟通后立即录入系统并更新案件状态。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "complaint-resolution",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "通讯系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "客户接受度判定与循环协商",
+      "type": "agent",
+      "prompt": "评估客户对补偿方案的接受情况。如客户接受方案，进入补偿执行和关单阶段。如客户不接受且协商未超过3轮，调整方案后重新进入沟通阶段。如已达3轮协商仍未解决，触发管理层介入流程。对于明确表示要投诉到监管/媒体的客户，同步通知监管合规Agent进行舆情监控。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "complaint-resolution",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "补偿执行与投诉关单",
+      "type": "agent",
+      "prompt": "执行已确认的补偿方案：代金券发放、退款操作、服务升级开通等。确认补偿已到账/生效，通知客户。更新投诉状态为已解决，记录关单时间和处理结果。触发满意度回访流程（24小时后）。将案件完整信息推送至根因分析Agent作为分析素材。计算该案件的实际处理时长和成本。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "complaint-resolution",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "补偿执行系统",
+          "财务系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "监管回复材料准备与提交",
+      "type": "agent",
+      "prompt": "针对监管投诉，在处理完成后按监管要求格式编写回复材料。内容包括：事件概述、调查过程、处理结果、客户沟通情况、整改措施。回复材料提交法务审核确保合规，审核通过后在法定时限截止前2天提交至监管平台。保存提交凭证并录入合规台账。如处理尚未完成但时限临近，准备阶段性回复说明进展情况。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "regulatory-compliance",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "合规管理系统",
+          "监管平台接口"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "外部平台舆情监控",
+      "type": "agent",
+      "prompt": "持续监控12315平台、黑猫投诉、微博、抖音、小红书等外部平台上与品牌相关的投诉和负面信息。每30分钟扫描一次，新发现的投诉30分钟内录入系统。评估每条舆情的风险等级（低/中/高/危机），基于发布者影响力、传播量和内容敏感度综合判定。高风险及以上立即预警并通知管理层。对有扩散趋势的事件建议公关应对策略。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "regulatory-compliance",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "12315 API",
+          "黑猫投诉API",
+          "社交媒体监控平台"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "投诉数据聚合与趋势分析",
+      "type": "agent",
+      "prompt": "按周/月维度采集全量投诉数据，进行多维度统计分析。分析维度包括：时间趋势（日/周/月投诉量变化）、类型分布（各类投诉占比和排名变化）、渠道分布（各来源渠道对比）、结果指标（解决率、满意度、SLA达标率）。识别异常波动（环比增长>30%触发预警）和新增趋势。输出结构化的数据分析结果和可视化建议。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "complaint-root-cause",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "投诉数据库",
+          "BI系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "根因深度分析",
+      "type": "agent",
+      "prompt": "对TOP3高频投诉类型运用5-Why分析法和鱼骨图方法进行根因挖掘。从人员、流程、系统、产品、外部五个维度分析根本原因。每个根因需有数据证据支撑（发生频次、影响客户数、成本影响），排除表面原因直达本质。评估根因之间的关联关系。对发现的知识盲区（因知识库缺失导致的投诉）及时通知知识库运营团队。输出根因分析报告。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "complaint-root-cause",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "改进建议制定与立项",
+      "type": "agent",
+      "prompt": "基于根因分析结果，针对每个根因制定具体可行的改进措施。每条措施明确：描述（做什么）、预期效果（解决什么问题、预期改善幅度）、责任部门/人、计划完成时间、成功验证指标。按SMART原则确保可执行性。提交管理层审批确认，获取责任方承诺。创建改进台账并启动跟踪。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "complaint-root-cause",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "项目管理系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "改进措施跟踪与效果验证",
+      "type": "agent",
+      "prompt": "持续跟踪已立项改进措施的执行进度。每周更新台账状态，对接近截止日的措施提醒责任人，对超期措施按催办升级机制处理（超期1周邮件催办抄送领导、超期2周升级总监）。措施上线后进入2-4周验证期，通过对比上线前后同类投诉量变化验证效果。输出改进台账仪表板和效果验证报告。",
+      "dependentTasks": [
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "complaint-root-cause",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "项目管理系统",
+          "投诉数据库"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-1",
+      "target": "task-3"
+    },
+    {
+      "source": "task-2",
+      "target": "task-4"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-5",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-12",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-16",
+      "target": "task-17"
+    },
+    {
+      "source": "task-17",
+      "target": "task-18"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "complaintSource",
+      "value": "",
+      "description": "投诉来源渠道（direct/escalation/external_platform/regulatory）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "customerId",
+      "value": "",
+      "description": "客户唯一标识ID",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "complaintContent",
+      "value": "",
+      "description": "投诉原始内容文本",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "severityLevel",
+      "value": "",
+      "description": "投诉严重等级（general/major/regulatory）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "slaDeadline",
+      "value": "",
+      "description": "SLA截止时间（ISO 8601格式）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "compensationAmount",
+      "value": "",
+      "description": "补偿方案总金额/价值（元）",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-7",
+      "name": "approvalLevel",
+      "value": "",
+      "description": "所需审批层级（auto/team_lead/supervisor/director）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "customerAcceptance",
+      "value": "",
+      "description": "客户对方案的接受状态（accepted/rejected/considering）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-9",
+      "name": "negotiationRound",
+      "value": "",
+      "description": "当前协商轮次（1-3），超过3轮触发管理层介入",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-10",
+      "name": "regulatoryDeadline",
+      "value": "",
+      "description": "监管法定回复截止时间（仅监管投诉，ISO 8601格式）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-11",
+      "name": "publicOpinionRiskLevel",
+      "value": "",
+      "description": "舆情风险等级（low/medium/high/crisis）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-12",
+      "name": "isRepeatComplaint",
+      "value": "",
+      "description": "是否为重复投诉",
+      "required": true,
+      "variableType": "boolean"
+    }
+  ]
+}

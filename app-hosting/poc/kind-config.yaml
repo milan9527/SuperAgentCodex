@@ -1,0 +1,15 @@
+# Local K8s cluster config for POC testing
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: app-host-poc
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 8443
+        protocol: TCP
+  - role: worker
+  - role: worker

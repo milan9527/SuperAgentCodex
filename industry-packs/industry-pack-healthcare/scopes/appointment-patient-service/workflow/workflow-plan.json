@@ -1,0 +1,609 @@
+{
+  "title": "预约与患者服务全流程工作流",
+  "description": "覆盖患者从预约挂号、智能分诊、候诊管理到就诊后满意度回访的端到端服务流程，包含急诊绿色通道、爽约管控、停诊处理等异常路径",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "接收并解析预约请求",
+      "type": "agent",
+      "prompt": "接收患者预约请求，解析来源渠道（App/小程序/电话/窗口/转诊）、患者基本信息（姓名、身份证号、联系方式）和预约目标（科室、医生偏好、日期时段偏好）。验证患者身份信息，确认是否为已建档患者，未建档则生成临时建档任务。输出标准化的预约请求对象，响应时间控制在3秒以内。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HIS系统",
+          "患者主索引"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "智能分诊症状采集",
+      "type": "agent",
+      "prompt": "对未明确就诊科室的患者启动智能分诊流程。通过结构化问卷和自然语言交互采集患者主诉（必填）、伴随症状、发病时间和诱因。确保采集到至少3项临床特征。同步执行Red Flags危险信号实时扫描，一旦匹配危急征象立即中断常规流程触发急诊评估。采集过程中查询患者既往病史和过敏史作为分诊参考。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "intelligent-triage",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "电子病历系统",
+          "症状知识图谱"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "判断是否为急诊",
+      "type": "agent",
+      "prompt": "根据智能分诊Agent的评估结果判断患者是否需要急诊处理。判定条件：存在Red Flags危险信号（胸痛伴出汗、单侧偏瘫、意识障碍、严重呼吸困难等），或生命体征异常（血压≤90/≥180mmHg、心率≤40/≥150次/分、SpO2≤90%、体温≥40°C），或CTAS评估为I/II/III级。满足任一条件即走急诊路径，否则进入常规预约流程。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "intelligent-triage",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "执行CTAS急诊分级与绿色通道激活",
+      "type": "agent",
+      "prompt": "对确认为急诊的患者执行CTAS五级分诊评估。I级（复苏）：心搏骤停、严重休克——立即激活抢救室，通知急诊值班主任；II级（紧急）：急性胸痛、脑卒中征象——分配急诊优先诊室，确保15分钟内接诊；III级（急症）：高热、中度疼痛——加入急诊优先队列，30分钟内接诊。绿色通道激活后绕过所有常规预约和排队流程，直接通知急诊科做好接诊准备，同步传递患者症状摘要和初步生命体征信息。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "intelligent-triage",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "急诊信息系统",
+          "通知系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "检查患者预约资格与爽约记录",
+      "type": "agent",
+      "prompt": "对进入常规预约流程的患者执行预约资格检查。具体操作：1)查询患者当季度爽约累计次数；2)检查是否存在同日同科室重复预约；3)若患者季度爽约≥3次，标记为'专家号受限'，仅允许预约普通号；4)识别特殊人群标识（≥65岁老人、残障人士、现役军人、孕妇），标记优先通道资格。输出资格检查报告：合格/受限（附限制原因和允许的号源类型）/不合格（附拒绝原因）。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HIS系统",
+          "爽约记录库"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "判断预约资格是否受限",
+      "type": "agent",
+      "prompt": "判断患者是否因爽约被限制预约。如果患者当季度爽约累计≥3次且预约目标为专家号，则进入受限处理路径（仅推荐普通号）。如果患者资格正常或预约目标本身为普通号，则进入号源匹配流程。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "号源匹配与锁定",
+      "type": "agent",
+      "prompt": "根据分诊推荐的科室（或患者自选科室）和患者偏好进行号源匹配。执行步骤：1)查询目标医生/科室在目标日期的可用号源；2)特殊人群走优先通道分配（不超过号源总量15%）；3)号源充足时执行原子锁定操作（锁定时效5分钟）；4)号源不足时生成替代方案（同科室其他医生可用时段、相邻日期号源、候补队列选项），按匹配度排序推荐至少2个替代方案。确保并发场景下号源冲突率≤0.1%。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "号源管理系统",
+          "排班系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "判断号源是否锁定成功",
+      "type": "agent",
+      "prompt": "判断号源锁定操作的结果。如果成功锁定目标号源，进入预约确认流程。如果号源不足或锁定失败（并发冲突），进入替代方案推荐流程。如果患者选择加入候补队列，记录候补信息并等待号源释放通知。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "确认预约并生成确认单",
+      "type": "agent",
+      "prompt": "号源锁定成功后完成预约确认。生成标准化预约确认单包含：预约确认号、患者姓名、就诊科室、接诊医生、就诊日期和时段（精确到30分钟）、诊室号和楼层位置、预计费用、就诊注意事项（空腹/停药等特殊准备）。更新号源池状态（可用→已预约）。将预约信息同步至HIS系统。记录完整预约操作审计日志（操作时间、渠道、操作者、结果）。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HIS系统",
+          "号源管理系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "发送预约确认通知",
+      "type": "agent",
+      "prompt": "预约确认后立即向患者发送确认通知。根据患者偏好选择渠道（App推送优先，备选微信/短信）。通知内容包含：预约确认号、就诊时间、科室和医生、诊室位置和导航链接、需携带的材料、特殊准备要求。同时创建后续提醒计划：就诊前24小时首次提醒（含交通指引）、就诊前2小时二次提醒（含实时候诊信息）。短信内容控制在70字以内。记录通知发送状态，失败时5分钟后自动重试。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "notification-reminder",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "短信网关",
+          "App推送服务",
+          "微信服务号"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "就诊日到院提醒与签到",
+      "type": "agent",
+      "prompt": "就诊当日执行到院提醒和签到管理。就诊前2小时发送到院提醒（含实时候诊人数和预计等候时间）。患者到院后通过自助机/App/窗口完成签到，签到成功后分配排队序号并加入诊室候诊队列。计算初始预计等候时间并推送给患者。如患者在预约时间后15分钟仍未签到，发送迟到提醒；超过15分钟未到院则触发爽约判定流程。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "notification-reminder",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "签到系统",
+          "App推送服务"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "判断患者是否按时到达",
+      "type": "agent",
+      "prompt": "判断患者是否在约定时间窗口内完成签到。判定标准：约定就诊时段开始后15分钟内完成签到视为按时到达，进入候诊管理流程。超过15分钟未签到视为爽约，进入爽约处理流程。特殊人群（老年人、残障人士）的缓冲时间延长至25分钟。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "签到系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "启动候诊排队管理",
+      "type": "agent",
+      "prompt": "患者签到后启动候诊排队管理。实时监控该诊室候诊队列状态：当前候诊人数、医生接诊进度、预计清空时间。每5分钟重新计算所有候诊患者的预计等候时间（基于医生历史平均接诊时长×前方人数+动态调整因子）。当同科室存在多个诊室且负载不均衡（某诊室候诊>其他50%）时，向后续签到患者推荐分流建议。前方≤3人时推送准备就诊提醒。检测异常等候（超预估30%）并触发主动安抚通知。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "queue-optimizer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "诊室叫号系统",
+          "候诊管理系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "执行爽约判定与号源释放",
+      "type": "agent",
+      "prompt": "对超时未到的患者执行爽约判定流程。确认判定：约定时间后15分钟未签到（特殊人群25分钟），标记为爽约。执行操作：1)释放该患者占用的号源回池；2)更新患者季度爽约累计计数（+1）；3)触发爽约通知，告知患者本次预约已取消及当前爽约累计情况；4)如有候补患者，通知候补队列第一位（限时30分钟确认）。检查爽约累计是否触发限制（≥3次锁定专家号权限），如触发则同步发送限制通知。排除因医院原因（停诊/系统故障）导致的未到诊。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "号源管理系统",
+          "爽约记录库"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "发送爽约通知",
+      "type": "agent",
+      "prompt": "向爽约患者发送标准化爽约通知。通知内容：告知本次预约因未按时到诊已被取消，号源已释放给其他患者。告知当前季度累计爽约次数（第X次/3次上限）。如为第2次爽约，增加黄色预警：再次爽约将限制专家号预约权限。如已达3次，通知专家号权限已限制，告知限制解除时间（当季度末）和申诉渠道。语气客观中性，提醒下次无法就诊请提前4小时取消。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "notification-reminder",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "短信网关",
+          "App推送服务"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "候诊实时状态推送",
+      "type": "agent",
+      "prompt": "向候诊中的患者实时推送排队状态更新。触发推送的条件：1)排队位次每前进1位时更新；2)预计等候时间变化>10分钟时主动通知；3)前方≤3人时发送准备就诊提醒；4)异常等候（超预估30%）时发送致歉和解释。推送内容包含：当前排队位次、前方等候人数、预计等候时间、诊室号。如等候超60分钟，主动提供选项：继续等候/改约至其他时段/转至其他诊室。叫号时发送最终叫号通知含诊室号，叫号后5分钟无应答发送过号预警。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "notification-reminder",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "候诊管理系统",
+          "App推送服务"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "触发满意度回访",
+      "type": "agent",
+      "prompt": "患者就诊完成后48小时内触发满意度回访。首先确认就诊已完成（有结算记录或完诊标记），排除不适合回访的情况（住院转入、重症诊断当日等）。在非勿扰时段（8:00-22:00）通过患者偏好渠道推送5维度评分问卷：预约便捷性(1-5分)、等候体验(1-5分)、医生服务(1-5分)、环境设施(1-5分)、总体满意度(1-5分)，附开放性文字反馈。3天未填写发送一次温和提醒。收集到的评分实时关联就诊数据（实际等候时间、接诊医生等）。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "notification-reminder",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "问卷系统",
+          "App推送服务",
+          "结算系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "判断满意度是否需要人工跟进",
+      "type": "agent",
+      "prompt": "根据患者回访评分判断是否需要触发人工跟进。判定规则：总体满意度评分≤3分（满分5分）或文字反馈中包含强烈负面情感表达时，需要生成投诉工单转人工处理。评分>3分时记录反馈纳入统计分析，不触发人工跟进。",
+      "dependentTasks": [
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "notification-reminder",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "生成投诉工单并转人工跟进",
+      "type": "agent",
+      "prompt": "对满意度≤3分的低分反馈生成投诉工单。工单内容包含：患者基本信息、就诊详情（科室、医生、日期）、各维度评分明细、文字反馈原文、就诊流程数据回溯（实际等候时间、是否有异常等候事件、是否有过号等）。指派人工客服团队，要求24小时内完成首次跟进。跟踪工单处理状态直至关闭。如24小时未处理自动升级至客服主管。处理完成后可选择触发二次回访确认问题已解决。",
+      "dependentTasks": [
+        "task-18"
+      ],
+      "metadata": {
+        "agentRef": "notification-reminder",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "工单系统",
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 4300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-20",
+      "title": "生成服务质量分析报告",
+      "type": "document",
+      "prompt": "每周汇总生成预约与患者服务质量分析报告。报告内容包含：1)核心KPI达成情况（预约诊疗率、分诊准确率、平均候诊时间、爽约率、满意度评分等）与目标对比；2)各科室满意度排名和变化趋势；3)异常事件回顾（停诊、系统故障、投诉等）及处理情况；4)候诊异常统计（超时等候次数、原因分布）；5)爽约数据分析（科室分布、时段分布）；6)改进建议（基于数据分析的具体可行建议）。报告推送至科室负责人和医务部管理层。",
+      "dependentTasks": [
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "notification-reminder",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "数据分析平台",
+          "报告系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-21",
+      "title": "停诊异常处理与患者通知",
+      "type": "agent",
+      "prompt": "处理医生临时停诊事件。接收停诊通知后立即执行：1)冻结该医生当日所有未使用号源；2)查询所有已预约该医生的患者列表；3)匹配同科室同级别替诊医生（优先相似专长）；4)30分钟内通过多渠道并发通知所有受影响患者，通知内容含停诊原因、替代医生推荐、一键改约链接、一键退号链接；5)跟踪患者响应（改约/退号/无响应）；6)24小时无响应的患者自动退号退费；7)释放的号源按常规流程处理（通知候补队列等）。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "appointment-scheduler",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "排班系统",
+          "HIS系统",
+          "通知系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-3",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-12",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-13",
+      "target": "task-16"
+    },
+    {
+      "source": "task-13",
+      "target": "task-17"
+    },
+    {
+      "source": "task-17",
+      "target": "task-18"
+    },
+    {
+      "source": "task-18",
+      "target": "task-19"
+    },
+    {
+      "source": "task-17",
+      "target": "task-20"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "patientId",
+      "value": "",
+      "description": "患者唯一标识符（就诊卡号或身份证号）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "appointmentChannel",
+      "value": "",
+      "description": "预约来源渠道（app/phone/window/referral）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "targetDepartment",
+      "value": "",
+      "description": "目标就诊科室代码",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "targetDoctor",
+      "value": "",
+      "description": "目标就诊医生ID（可选，患者可不指定）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "preferredDate",
+      "value": "",
+      "description": "期望就诊日期（格式：YYYY-MM-DD）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "preferredTimeSlot",
+      "value": "",
+      "description": "期望时段（morning/afternoon/具体时间HH:mm）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "chiefComplaint",
+      "value": "",
+      "description": "患者主诉（自然语言描述主要不适症状）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "ctasLevel",
+      "value": "",
+      "description": "CTAS急诊分级结果（I/II/III/IV/V/NORMAL）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-9",
+      "name": "noShowCount",
+      "value": "",
+      "description": "患者当季度爽约累计次数",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-10",
+      "name": "appointmentConfirmationId",
+      "value": "",
+      "description": "预约确认号（预约成功后生成）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-11",
+      "name": "satisfactionScore",
+      "value": "",
+      "description": "患者总体满意度评分（1-5分）",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-12",
+      "name": "isSpecialPopulation",
+      "value": "",
+      "description": "是否为特殊人群（老年人/残障/军人/孕妇）",
+      "required": false,
+      "variableType": "boolean"
+    }
+  ]
+}

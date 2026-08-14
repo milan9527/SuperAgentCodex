@@ -1,0 +1,574 @@
+{
+  "title": "员工入职与试用期全流程管理",
+  "description": "管理从候选人接受Offer到试用期转正的完整生命周期，包括入职准备、首日引导、导师分配、试用期回访和转正评估决策，确保新员工快速融入且流程合法合规。",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "接收Offer确认并启动入职准备",
+      "type": "agent",
+      "prompt": "接收来自招聘管理流程的Offer确认信息，提取新员工关键信息（姓名、岗位、部门、入职日期、薪资信息、直属上级）。根据岗位类型选择对应的入职准备清单模板，生成个人化准备清单。计算各时间节点的具体日期（T-7、T-5、T-3、T-1）。向新员工发送入职材料清单，向IT和行政部门发送准备工单，通知直属上级和导师体系协调员。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "onboarding-preparation-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "邮件系统",
+          "招聘管理系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "入职材料收集与审核",
+      "type": "agent",
+      "prompt": "跟踪新员工入职材料的提交进度，对已提交材料进行形式审核和实质审核。检查材料完整性（身份证、学历证、离职证明、体检报告、银行卡信息），验证有效性（证件有效期、体检报告时效）。通过学信网验证学历真伪。对材料缺失情况分级处理：非关键材料标记可补交，关键材料催收并设截止日期。材料审核通过后确认无入职阻断项。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-preparation-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "学信网",
+          "HR系统",
+          "邮件系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "跨部门准备协调与确认",
+      "type": "agent",
+      "prompt": "在T-3天执行全面的跨部门准备状态检查：确认IT系统账号（邮箱、VPN、OA、业务系统）已全部开通并测试通过，确认行政设备（工位、电脑、门禁卡）已到位且功能正常。对未就绪项目立即联系对口同事推进，超24小时未解决则升级至部门主管。所有项目确认就绪后，标记清单状态为已准备完成。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-preparation-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "IT工单系统",
+          "行政管理系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "检查入职准备是否全部就绪",
+      "type": "agent",
+      "prompt": "评估入职准备的整体完成状态：材料审核是否通过（至少关键材料齐全）、IT系统是否就绪、行政设备是否到位、直属上级是否确认。如果全部就绪，进入入职首日流程；如果存在阻断项（如关键材料缺失且无法补救），需要评估是否暂缓入职。",
+      "dependentTasks": [
+        "task-2",
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-preparation-coordinator",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "入职首日报到与合同签署",
+      "type": "agent",
+      "prompt": "执行入职首日上午流程：迎接新员工完成报到登记，核验身份证原件并发放工牌。逐条向新员工讲解劳动合同核心条款（合同期限、试用期时长、薪资结构、工作职责、保密义务），确保员工充分理解后双方签署劳动合同及附件（保密协议、竞业限制协议等）。合同一式两份，当场交付员工一份。所有签署文件扫描归档。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-guide-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "电子档案系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "制度培训与合规考核",
+      "type": "agent",
+      "prompt": "执行入职首日的标准化制度培训：公司制度宣导（考勤、假期、薪酬、报销、晋升），信息安全培训（密码策略、数据分类、外发管控），行为准则培训（职业道德、利益冲突、反骚扰），安全生产基础培训。培训结束后执行信息安全闭卷考核（80分及格）。记录培训签到、发放并收回制度知情确认书和员工手册签收单。所有培训记录当日归档。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-guide-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "培训管理系统",
+          "考核系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "判断合规考核是否通过",
+      "type": "agent",
+      "prompt": "检查新员工信息安全考核成绩是否达到80分及格线。通过则继续后续流程；未通过则安排48小时内补考。二次补考仍不通过需上报HR经理评估处理方案。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-guide-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "首周融入与团队介绍",
+      "type": "agent",
+      "prompt": "执行入职首周的融入活动安排：入职首日下午带新员工至工位并介绍团队成员，安排与直属上级的首次欢迎沟通。首周内组织部门午餐促进团队熟悉，协助新员工完成各系统首次登录，安排办公环境全面引导（会议室、茶水间、健身房等）。如有同期入职新员工则组织新人交流活动。首周末收集首周体验反馈问卷。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "onboarding-guide-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "内部沟通平台",
+          "问卷系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "导师匹配与辅导计划制定",
+      "type": "agent",
+      "prompt": "在新员工入职后3个工作日内完成导师匹配：收集新员工的岗位信息、技能背景和待发展能力项，在导师资源池中基于多维匹配模型（专业匹配度35%、能力互补度25%、时间可用性20%、辅导经验15%、物理距离5%）进行评分排序。推荐Top 3导师并征询首选导师意愿。确认后安排三方首次见面，共同制定辅导计划（阶段目标、沟通频率、重点内容），辅导计划三方签字确认。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "mentor-coordination-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "导师管理平台"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "试用期目标设定",
+      "type": "agent",
+      "prompt": "在入职后7个工作日内协助完成试用期考核目标设定：与直属上级沟通岗位核心产出要求，将试用期分为3个阶段设定递进式里程碑目标。审核目标SMART合规性，确保与Offer中的录用条件对齐（这是法律合规的关键）。组织三方确认会（新员工+直属上级+HR），签署《试用期考核目标书》并归档。在HR系统中设置1/3和2/3节点的回访提醒。",
+      "dependentTasks": [
+        "task-8",
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "probation-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "试用期1/3节点结构化回访",
+      "type": "agent",
+      "prompt": "在试用期1/3节点发起结构化回访评估：提前3天预约三方时间，准备回访材料（目标书、近期产出数据）。分别执行三方回访——新员工（工作适应度、困难需求、自我评估）、直属上级（任务完成度、工作能力、态度评估）、导师（学习进度、成长潜力）。汇总信息形成风险评级（绿灯/黄灯/红灯）。绿灯存档继续，黄灯制定改进措施并增加关注，红灯24小时内上报HR经理。回访记录48小时内归档。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "probation-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "日程系统"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "辅导过程质量监控",
+      "type": "agent",
+      "prompt": "执行试用期内的持续辅导质量监控：每两周检查导师辅导记录提交情况（标准为每周至少1次一对一沟通），对连续2周未有辅导记录的配对发送提醒，3周未有则升级至导师直属上级。每月收集新员工对导师辅导的满意度评分（5分制），满意度低于3分时启动诊断面谈。分析辅导效果数据，对存在问题的配对制定干预措施或启动导师更换。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "mentor-coordination-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "导师管理平台",
+          "问卷系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "评估1/3节点回访风险级别",
+      "type": "agent",
+      "prompt": "根据试用期1/3节点回访结果判断下一步行动：如果风险评级为绿灯，正常等待2/3节点回访；如果为黄灯，已制定改进措施，需增加中间检查频率（每两周一次）；如果为红灯，已上报HR经理，需根据HR经理决策执行干预方案（可能包括加密辅导、调整岗位职责或启动提前预警）。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "probation-management-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "试用期2/3节点结构化回访",
+      "type": "agent",
+      "prompt": "在试用期2/3节点发起第二次结构化回访评估：对照1/3节点的评估结果和改进措施执行情况进行追踪评估。重点关注：目标完成进度是否追上预期、改进措施是否有效、导师评估反馈变化趋势。对黄灯员工重点评估改进效果：改进有效则维持关注，改进无效则启动不通过预流程（提前15天准备正式通知的法律合规准备）。形成最终转正评估前的预判结论。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "probation-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "日程系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "评估2/3节点结果并决定转正路径",
+      "type": "agent",
+      "prompt": "根据2/3节点回访结果决定下一步路径：如果评估正常（绿灯或黄灯转绿），在试用期到期前15个工作日启动正式转正评估流程；如果改进无效（持续黄灯或红灯），启动试用期不通过预流程，开始准备合规证据审查和书面通知材料。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "probation-management-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "组织三方转正评估",
+      "type": "agent",
+      "prompt": "在试用期到期前15个工作日启动转正评估流程：收集试用期内全部目标完成数据、回访记录、导师评估、工作产出。组织三方评估会——直属上级评估岗位胜任力（目标达成度、工作质量、独立工作能力），导师评估学习成长（学习速度、知识吸收、技能提升），HR评估文化适配度（价值观契合、团队协作、职业稳定性）。5个工作日内完成全部评估，形成转正/延期/不通过的决策建议。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "probation-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "转正决策与执行",
+      "type": "agent",
+      "prompt": "根据三方评估结论执行对应流程：通过转正→确认转正日期和正式薪资，更新合同状态，通知员工并发送祝贺，员工进入正式绩效管理循环；延期→书面明确延期理由、条件和时限，设定延期目标，到期重新评估；不通过→进入合规审核和离职办理流程。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "probation-management-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "不通过合规审核与离职办理",
+      "type": "agent",
+      "prompt": "执行试用期不通过的合规处理流程：首先进行证据完备性检查——确认录用条件已事先告知且有签字、试用期目标双方确认、不达标有客观数据支撑、已给予改进机会和帮助、改进无效有跟踪记录、各次沟通有书面记录。法务审查确认合法性后，出具《试用期不通过通知书》（含具体原因和证据引用）。提前15天送达员工（书面签收，拒签则第三方见证）。办理离职手续：工作交接、设备归还、系统权限关闭、薪资结算、开具离职证明。",
+      "dependentTasks": [
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "probation-management-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "HR系统",
+          "法务系统",
+          "IT系统",
+          "财务系统"
+        ]
+      },
+      "position": {
+        "x": 4300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "导师辅导总结与激励核算",
+      "type": "agent",
+      "prompt": "在新员工试用期结束后（无论转正与否），完成导师辅导的总结和激励核算：统计导师在整个辅导周期内的辅导频率达标率、辅导记录完整度、新员工满意度评分。按照激励规则核算绩效加分（完成完整辅导周期0.5-1.0分，频率达标≥85%满分，满意度≥4.0额外加0.2分）。更新导师资源池中该导师的辅导记录和能力标签。归档辅导总结报告。",
+      "dependentTasks": [
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "mentor-coordination-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "导师管理平台",
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 4300,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-1",
+      "target": "task-3"
+    },
+    {
+      "source": "task-2",
+      "target": "task-4"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-5",
+      "target": "task-9"
+    },
+    {
+      "source": "task-8",
+      "target": "task-10"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-9",
+      "target": "task-12"
+    },
+    {
+      "source": "task-11",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-16",
+      "target": "task-17"
+    },
+    {
+      "source": "task-17",
+      "target": "task-18"
+    },
+    {
+      "source": "task-17",
+      "target": "task-19"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "employeeName",
+      "value": "",
+      "description": "新员工姓名",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "positionTitle",
+      "value": "",
+      "description": "入职岗位名称",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "department",
+      "value": "",
+      "description": "所属部门",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "onboardingDate",
+      "value": "",
+      "description": "入职日期（格式：YYYY-MM-DD）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "contractDuration",
+      "value": "",
+      "description": "劳动合同期限（如：3年）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "probationDuration",
+      "value": "",
+      "description": "试用期时长（如：3个月、6个月）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "directSupervisor",
+      "value": "",
+      "description": "直属上级姓名和联系方式",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "salaryInfo",
+      "value": "",
+      "description": "薪资信息（试用期工资和转正工资）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-9",
+      "name": "positionType",
+      "value": "",
+      "description": "岗位类型（技术/业务/管理/支持）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-10",
+      "name": "mentorName",
+      "value": "",
+      "description": "分配的导师姓名",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-11",
+      "name": "probationGoals",
+      "value": "",
+      "description": "试用期考核目标内容（JSON格式的阶段性目标列表）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-12",
+      "name": "reviewResult",
+      "value": "",
+      "description": "转正评估结论（通过/延期/不通过）",
+      "required": false,
+      "variableType": "string"
+    }
+  ]
+}

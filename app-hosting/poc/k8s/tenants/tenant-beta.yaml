@@ -1,0 +1,191 @@
+---
+# Tenant: beta (Tenant B) - orgShortId: 7a8b9c0d1e2f
+# Apps:
+#   1. crm-app (CRM) shortId: 4d5e6f7a8b9c
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: beta
+  labels:
+    tenant: beta
+    org-short-id: 7a8b9c0d1e2f
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tenant-db
+  namespace: beta
+spec:
+  serviceName: tenant-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tenant-db
+  template:
+    metadata:
+      labels:
+        app: tenant-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_DB
+              value: tenant_beta
+            - name: POSTGRES_USER
+              value: tenant_admin
+            - name: POSTGRES_PASSWORD
+              value: beta_pg_poc_123
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-db
+  namespace: beta
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: tenant-db
+---
+# ========== App: crm-app (CRM) ==========
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crm-app-frontend
+  namespace: beta
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="zh-CN"><head><meta charset="UTF-8"><title>CRM - Tenant B</title>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#f5f7fa}
+    .header{background:linear-gradient(135deg,#00695c,#00897b);color:#fff;padding:16px 24px}
+    .header h1{font-size:20px}.header p{font-size:13px;opacity:.8;margin-top:4px}
+    .container{max-width:1000px;margin:24px auto;padding:0 24px}
+    .card{background:#fff;border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    .card h2{font-size:16px;margin-bottom:12px;color:#00695c}
+    table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eee;font-size:14px}
+    th{background:#f5f7fa;color:#666;font-weight:600}
+    .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px}
+    .badge-active{background:#e8f5e9;color:#2e7d32}.badge-inactive{background:#ffebee;color:#c62828}
+    .btn{padding:8px 16px;border:none;border-radius:4px;cursor:pointer;font-size:13px}
+    .btn-primary{background:#00695c;color:#fff}.btn-primary:hover{background:#00897b}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+    .stat-card{background:#fff;border-radius:8px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.1);text-align:center}
+    .stat-card .num{font-size:32px;font-weight:700;color:#00695c}.stat-card .label{font-size:13px;color:#999;margin-top:4px}
+    </style></head><body>
+    <div class="header"><h1>CRM系统</h1><p>Tenant B - CRM</p></div>
+    <div class="container">
+      <div class="stats">
+        <div class="stat-card"><div class="num" id="total">0</div><div class="label">总客户</div></div>
+        <div class="stat-card"><div class="num" id="active">0</div><div class="label">活跃客户</div></div>
+        <div class="stat-card"><div class="num" id="budget">¥0</div><div class="label">总预算</div></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h2>客户列表</h2>
+          <button class="btn btn-primary" onclick="createCustomer()">+ 新建客户</button>
+        </div>
+        <table><thead><tr><th>客户名称</th><th>行业</th><th>联系人</th><th>预算</th><th>状态</th></tr></thead>
+        <tbody id="customers"></tbody></table>
+      </div>
+    </div>
+    <script>
+    const API=window.location.origin+'/api/data/customers';
+    async function loadCustomers(){const r=await fetch(API);const d=await r.json();const records=d.records||[];
+    document.getElementById('customers').innerHTML=records.map(c=>`<tr>
+    <td>${c.name||'-'}</td><td>${c.industry||'-'}</td><td>${c.contact||'-'}
+    </td><td>${c.budget?'¥'+Number(c.budget).toLocaleString():'-'}</td>
+    <td><span class="badge badge-${c.status==='active'?'active':'inactive'}">${c.status||'active'}</span></td></tr>`).join('');
+    document.getElementById('total').textContent=records.length;
+    document.getElementById('active').textContent=records.filter(c=>c.status==='active').length;
+    document.getElementById('budget').textContent='¥'+records.reduce((s,c)=>s+(Number(c.budget)||0),0).toLocaleString();}
+    async function createCustomer(){const n=prompt('客户名称:');if(!n)return;const i=prompt('行业:');
+    await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,industry:i,contact:'待填写',budget:0,status:'active'})});loadCustomers();}
+    loadCustomers();
+    </script></body></html>
+  nginx.conf: |
+    server { listen 80; root /usr/share/nginx/html; index index.html;
+    location / { try_files $uri $uri/ /index.html; }
+    location /api/ { proxy_pass http://localhost:3000/api/; proxy_set_header Host $host; } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crm-app
+  namespace: beta
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crm-app
+  template:
+    metadata:
+      labels:
+        app: crm-app
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports: [{containerPort: 80}]
+          volumeMounts:
+            - {name: html, mountPath: /usr/share/nginx/html}
+            - {name: conf, mountPath: /etc/nginx/conf.d/default.conf, subPath: nginx.conf}
+        - name: runtime
+          image: app-runtime:poc
+          ports: [{containerPort: 3000}]
+          env:
+            - {name: APP_ID, value: "4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f90"}
+            - {name: APP_SHORT_ID, value: "4d5e6f7a8b9c"}
+            - {name: ORG_ID, value: "7a8b9c0d-1e2f-3a4b-5c6d-222222222222"}
+            - {name: ORG_SHORT_ID, value: "7a8b9c0d1e2f"}
+            - {name: DATABASE_URL, value: "postgresql://app_4d5e6f7a8b9c:crm123@tenant-db.beta.svc.cluster.local:5432/tenant_beta"}
+            - {name: S3_BUCKET, value: "app-host-beta-7a8b9c0d1e2f"}
+            - {name: S3_PREFIX, value: "4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f90/"}
+            - {name: JWT_SECRET, value: "beta-crm-jwt-secret"}
+            - name: SCHEMA_DEF
+              value: >-
+                {"tables":{"customers":{"columns":{"id":"serial PRIMARY KEY","name":"text NOT NULL","industry":"text","contact":"text","budget":"numeric DEFAULT 0","status":"text DEFAULT 'active'","created_at":"timestamptz DEFAULT now()"}}}}
+      volumes:
+        - {name: html, configMap: {name: crm-app-frontend}}
+        - {name: conf, configMap: {name: crm-app-frontend}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crm-app
+  namespace: beta
+spec:
+  ports:
+    - {port: 80, targetPort: 80}
+    - {name: api, port: 3000, targetPort: 3000}
+  selector:
+    app: crm-app
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: crm-app
+  namespace: beta
+spec:
+  entryPoints: [web]
+  routes:
+    - match: Host(`4d5e6f7a8b9c.app.poc.local`)
+      kind: Rule
+      services:
+        - {name: crm-app, port: 80}

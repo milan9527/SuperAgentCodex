@@ -1,0 +1,472 @@
+{
+  "title": "销售数据分析全流程工作流",
+  "description": "覆盖数据质量治理、周报/月报自动生成、季度收入预测、团队效能评估和实时异常预警的完整数据分析工作流。通过多Agent协作实现从数据采集到洞察输出的端到端自动化。",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "数据采集与质量校验",
+      "type": "agent",
+      "prompt": "从各数据源Scope（线索与商机管理、报价与合同、客户成功）采集最新的销售数据。执行数据完整性校验：检查关键字段（商机金额、阶段、预计日期、负责人）缺失率是否低于5%。检查数据同步延迟是否在1小时以内。检查跨系统字段一致性是否达到98%以上。输出数据质量评分卡（完整性/时效性/一致性/准确性四维度），如质量不达标则生成数据质量问题报告并标注影响范围。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "anomaly-insight-sentinel",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "财务系统",
+          "合同管理系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "数据质量问题判定",
+      "type": "agent",
+      "prompt": "根据数据质量校验结果判定数据是否达到分析要求。判定标准：关键字段完整率≥95%为通过；90-95%为降级通过（标注数据置信度降级）；低于90%为不通过（需阻断后续分析并触发紧急修复流程）。输出判定结果和后续流程分支指令。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "anomaly-insight-sentinel",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "数据质量问题修复协调",
+      "type": "action",
+      "prompt": "当数据质量未达标时，生成详细的数据质量问题报告，明确列出缺失的字段、涉及的记录数量和负责人。向数据源Scope发送数据补全通知，设定修复SLA（Critical级30分钟、High级2小时）。对于需要继续使用的分析场景，标注暂用历史数据填充并注明为估算值。追踪修复进度直到数据质量恢复到标准水平。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "anomaly-insight-sentinel",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "CRM系统",
+          "通知系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "销售周报数据汇总与分析",
+      "type": "agent",
+      "prompt": "执行每周销售周报的数据汇总和分析工作（每周一触发）。汇总上周关键数据：新增线索数/MQL/SQL转化数、新增商机数和金额、签约数和金额、赢单和丢单数据、各类活动量（外呼/会议/演示）。计算各指标的周环比变化和与目标的偏差。执行指标健康度三色灯判定：绿灯（达成≥90%）、黄灯（70-90%）、红灯（<70%）。标注本周关键事件（大单签约/丢失、人员变动、新市场突破）。对黄灯指标附加简要原因分析，对红灯指标标记需专项分析。提炼3-5条关键洞察，每条包含So What和Now What。按标准周报模板格式化输出。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "performance-insights-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "报表系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "周报红灯指标专项分析",
+      "type": "agent",
+      "prompt": "检查周报中是否存在红灯指标（偏离目标>20%）。如果存在红灯指标，触发专项深度分析流程并向管理层发送alert通知。如果仅有黄灯或全部绿灯，则直接进入周报发布流程。输出判定结果：是否需要专项分析、涉及哪些指标、建议的分析方向。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "performance-insights-analyst",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "红灯指标根因分析",
+      "type": "agent",
+      "prompt": "对周报中触发红灯的指标进行深度根因分析。采用5-Why方法层层追问偏差原因。收集相关维度数据：按区域/产品线/团队/个人分解偏差来源。对比历史同期排除季节性因素。生成假设并用数据验证：可能是人员因素（人员流失/新人未ramp-up）、流程因素（阶段推进受阻）、市场因素（竞品动作/需求变化）还是数据因素。输出根因分析报告：问题定义→数据证据→根因结论→短期止血措施→中期改善建议。每条建议明确责任人和时间节点。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "anomaly-insight-sentinel",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "月度业绩报告生成",
+      "type": "agent",
+      "prompt": "执行每月业绩月报的完整生成流程（每月5号前完成）。汇总本月业绩数据并进行多维度拆解：按区域分析收入贡献和增长率、按行业分析渗透率和机会点、按产品线分析营收占比和趋势、按客户规模分析大客户vs中小客户贡献、按个人分析达标率和效能指标。计算月度业绩排名（综合排名考虑达标率、赢率、活动量多维度）和激励达成率。分析团队效能对比：人均产出、赢率、平均交易规模、销售周期、活动量。识别Top Performer的成功模式（可复制行为特征）和Underperformer的改善方向。生成6个月趋势分析和下月展望。按月报标准模板输出完整报告。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "performance-insights-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "HR系统",
+          "报表系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "漏斗健康度评估",
+      "type": "agent",
+      "prompt": "执行销售漏斗的全面健康度评估。从CRM获取所有活跃商机数据，按标准销售阶段（线索→MQL→SQL→商机→报价→谈判→签约）计算各阶段转化率。与历史同期（去年同期/上月同期）和行业基准进行对比。计算各阶段平均停留时长，识别瓶颈阶段（停留时间超过历史平均1.5倍的阶段）。分析漏斗形态是否健康（头重脚轻/中间膨胀/底部堆积），对比理想漏斗形态标注偏差。输出漏斗健康度评分卡（0-100分），列出TOP 3风险点和改善建议。按区域和产品线分别输出子漏斗分析。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "pipeline-forecast-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 550
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "Pipeline Coverage计算与预警",
+      "type": "agent",
+      "prompt": "计算当前的Pipeline Coverage并判断健康度。获取所有活跃商机按阶段赢率加权后的总Pipeline金额（加权金额=商机金额×阶段权重：需求确认15%/方案演示30%/报价50%/谈判70%/口头承诺90%）。获取当期剩余Quota目标。计算Coverage比值=加权Pipeline/剩余Quota。判断健康度等级：≥4倍（优秀-绿色）、3-4倍（健康-绿色）、2-3倍（需关注-黄色预警）、<2倍（危险-红色预警）。对黄色/红色情况生成具体的补充建议：需要多少新增Pipeline才能达到健康水平、建议增加哪些渠道的线索投入、哪些阶段的商机可以加速推进。每周更新一次Coverage数据。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "pipeline-forecast-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "季度收入预测",
+      "type": "agent",
+      "prompt": "执行季度收入预测的完整建模流程。步骤一（加权管线法）：对所有预计本季度关单的商机按阶段赢率加权计算预测值。步骤二（历史趋势法）：基于过去4-8个季度的实际数据计算增长趋势并外推，考虑季节性系数和团队规模变化。步骤三（AI修正）：应用修正因子——各销售人员历史承诺兑现率、大单集中度风险因子、季度末冲刺效应系数。步骤四（综合预测）：按α=0.5/β=0.3/γ=0.2加权合并三种方法输出综合预测值和±10-15%置信区间。步骤五（风险分析）：标注TOP5风险商机、进行Best/Most Likely/Worst Case场景分析、计算目标达成概率。步骤六（报告输出）：与上月预测对比分析偏差原因，与年度目标对比计算Gap。输出正式季度预测报告。",
+      "dependentTasks": [
+        "task-8",
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "pipeline-forecast-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "财务系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "预测偏差检查与模型优化",
+      "type": "agent",
+      "prompt": "检查本次预测与上次预测的偏差是否超过合理范围。判断标准：月度预测更新偏差>15%需要说明原因；季度最终预测与实际结果偏差>±10%需要触发模型优化流程。如果偏差在合理范围内，输出预测报告定稿。如果偏差超出范围，触发根因分析和模型参数调整流程。输出判定结果及后续行动指令。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "pipeline-forecast-analyst",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "预测模型参数优化",
+      "type": "agent",
+      "prompt": "当预测偏差超过±10%时，执行模型参数优化流程。分析偏差来源：是加权管线法偏差大（阶段赢率权重需调整）、还是趋势法偏差大（增长率假设需修正）、还是AI修正因子失效。回测过去2-4个季度的数据验证调整后的参数效果。更新阶段赢率权重（基于实际转化数据）。调整三种方法的综合权重α/β/γ。更新个人承诺兑现率。输出模型优化报告：调整了哪些参数、为什么调整、预期对预测准确率的提升。用调整后的参数重新计算本季度预测值。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "pipeline-forecast-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "实时异常监控与检测",
+      "type": "agent",
+      "prompt": "执行7×24小时的销售数据异常实时监控。监听CRM系统和各Scope的数据变更事件流。对每条数据变更事件进行规则匹配检测：商机金额变更>50%、商机阶段跳跃、Pipeline周环比变化>20%、个人赢率偏离团队平均>2σ、大单（>季度Quota10%）状态变更为Lost。维护滑动窗口统计（7天/30天移动平均）作为动态基线。对触发规则的事件进行二次确认（排除已知正常操作如批量导入）。确认为真实异常后进行严重性分级：P1（大单丢失/Pipeline断崖/批量异常）→15分钟内预警、P2（单指标偏离）→1小时内预警、P3（轻微偏离）→4小时内预警。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "anomaly-insight-sentinel",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "事件流系统",
+          "通知系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "异常预警报告生成与发送",
+      "type": "agent",
+      "prompt": "对确认的异常生成标准化预警报告并发送。报告内容六要素：1.严重性标签[P1-紧急/P2-重要/P3-关注]；2.异常类型标签（商机金额异变/阶段跳跃/Pipeline波动/赢率偏离/大单丢失）；3.异常描述（具体数据前值→后值、变化幅度、涉及的商机/人员/客户）；4.影响评估（对季度预测的量化影响、对目标达成的影响程度）；5.可能原因分析（基于数据推断2-3种最可能的原因并排序）；6.建议行动（具体响应建议：谁做什么、建议时间节点）。按预警级别发送到对应通知对象。P1同时通知VP和总监，P2通知总监和经理，P3通知经理。启动预警追踪计时，记录发送时间和接收确认。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "anomaly-insight-sentinel",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "通知系统",
+          "企业微信/钉钉"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 700
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "预警追踪与规则优化",
+      "type": "agent",
+      "prompt": "对已发送的预警进行追踪闭环和规则优化。追踪每条预警的响应状态：已确认/处理中/已解决/标记为误报。对超时未响应的预警执行升级（P1超1小时升级CEO，P2超4小时升级VP）。收集预警最终确认结果（真阳性/误报）。月度统计：总预警数量、各级别分布、真阳性率、误报率、平均响应时间。对误报率>20%的规则进行分析：是阈值过于敏感还是规则逻辑有缺陷。提出规则优化建议（调整阈值/增加排除条件/修改检测逻辑）。季度输出异常模式总结报告：识别规律性异常、系统性风险、预警能力提升方向。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "anomaly-insight-sentinel",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "通知系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "分析报告质量自检与发布",
+      "type": "document",
+      "prompt": "对所有待发布的分析报告（周报/月报/预测报告/专项分析）执行发布前质量自检。检查清单：1.内容完整性——是否包含问题定义、数据来源说明、核心发现、So What（影响解读）、Now What（行动建议）；2.数据准确性——关键数字二次计算验证、同比环比计算基准一致、图表数据与文字匹配；3.建议可行性——每条建议是否有明确责任人、时间节点、预期效果；4.格式规范性——Executive Summary<200字、结构化格式、专业术语有解释；5.受众适配——语言和详略度适合目标读者。自检通过后正式发布并记录发布时间。未通过项标记修改并重新自检。",
+      "dependentTasks": [
+        "task-4",
+        "task-7",
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "performance-insights-analyst",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "文档系统",
+          "邮件系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-2",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-2",
+      "target": "task-7"
+    },
+    {
+      "source": "task-2",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-8",
+      "target": "task-10"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-1",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-4",
+      "target": "task-16"
+    },
+    {
+      "source": "task-7",
+      "target": "task-16"
+    },
+    {
+      "source": "task-10",
+      "target": "task-16"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "reportingPeriod",
+      "value": "",
+      "description": "当前报告周期（如2024-W12、2024-03、2024-Q1）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "quarterlyQuota",
+      "value": "",
+      "description": "当前季度的销售目标金额（Quota）",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-3",
+      "name": "pipelineCoverageThreshold",
+      "value": "",
+      "description": "Pipeline Coverage健康阈值（默认3倍）",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-4",
+      "name": "forecastAccuracyTarget",
+      "value": "",
+      "description": "预测准确率目标（默认±10%，即0.1）",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-5",
+      "name": "dataQualityThreshold",
+      "value": "",
+      "description": "数据质量合格阈值——关键字段完整率（默认95%，即0.95）",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-6",
+      "name": "anomalyAlertRecipients",
+      "value": "",
+      "description": "各级别预警的通知接收人配置（P1/P2/P3对应不同角色列表）",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-7",
+      "name": "stageWinRateWeights",
+      "value": "",
+      "description": "各销售阶段的赢率权重配置（用于加权Pipeline计算）",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-8",
+      "name": "forecastModelWeights",
+      "value": "",
+      "description": "三种预测方法的综合权重配置（α加权管线法/β趋势法/γAI修正）",
+      "required": false,
+      "variableType": "object"
+    }
+  ]
+}

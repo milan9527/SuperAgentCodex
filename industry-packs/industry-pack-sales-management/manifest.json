@@ -1,0 +1,148 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2025-01-14T06:30:00.000Z",
+  "generator": "super-agent-batch-v2",
+  "industry": {
+    "id": "sales-management",
+    "name": "销售管理",
+    "icon": "📈",
+    "color": "#10B981"
+  },
+  "stats": {
+    "scopeCount": 5,
+    "agentCount": 18,
+    "skillCount": 57,
+    "workflowCount": 5,
+    "twinCount": 1,
+    "sopCount": 5
+  },
+  "scopes": [
+    {
+      "dirName": "lead-opportunity-management",
+      "name": "线索与商机管理",
+      "agents": [
+        "lead-intake-processor",
+        "lead-routing-dispatcher",
+        "sdr-engagement-coach",
+        "opportunity-progression-manager"
+      ],
+      "skills": [
+        "bant-scoring",
+        "data-enrichment",
+        "deal-risk-assessment",
+        "intelligent-lead-routing",
+        "lead-data-cleansing",
+        "nurture-planning",
+        "opportunity-stage-validation",
+        "outreach-script-generation",
+        "pipeline-review-generation",
+        "sla-monitoring",
+        "sql-qualification-assessment",
+        "workload-balancing"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "quotation-contract",
+      "name": "报价与合同",
+      "agents": [
+        "quotation-configurator",
+        "discount-approval-controller",
+        "contract-drafting-reviewer",
+        "contract-risk-analyst"
+      ],
+      "skills": [
+        "approval-decision-support",
+        "contract-clause-review",
+        "contract-risk-assessment",
+        "contract-template-management",
+        "cpq-product-configuration",
+        "discount-analytics",
+        "discount-routing-engine",
+        "historical-dispute-analysis",
+        "pricing-calculation",
+        "quotation-document-generation",
+        "risk-mitigation-advisory",
+        "signing-workflow-management"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "customer-success",
+      "name": "客户成功",
+      "agents": [
+        "onboarding-orchestrator",
+        "health-score-manager",
+        "renewal-expansion-strategist",
+        "customer-engagement-coordinator"
+      ],
+      "skills": [
+        "churn-risk-intervention",
+        "customer-engagement-planning",
+        "customer-handover-management",
+        "expansion-opportunity-identification",
+        "health-score-assessment",
+        "implementation-project-tracking",
+        "nps-survey-management",
+        "predictive-analytics-modeling",
+        "qbr-preparation",
+        "renewal-negotiation-management",
+        "renewal-risk-assessment",
+        "time-to-value-acceleration"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "sales-analytics",
+      "name": "销售数据分析",
+      "agents": [
+        "pipeline-forecast-analyst",
+        "performance-insights-analyst",
+        "anomaly-insight-sentinel"
+      ],
+      "skills": [
+        "anomaly-detection-alerting",
+        "data-quality-governance",
+        "pipeline-health-analysis",
+        "revenue-forecasting",
+        "root-cause-analysis",
+        "sales-report-generation",
+        "team-performance-benchmarking"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "sales-training-ai-coaching",
+      "name": "销售培训与AI陪练",
+      "agents": [
+        "scenario-simulation-engine",
+        "competency-assessment-coach",
+        "knowledge-strategy-curator"
+      ],
+      "skills": [
+        "competency-tracking",
+        "difficulty-adaptation",
+        "knowledge-base-curation",
+        "multi-dimension-scoring",
+        "personalized-coaching-report",
+        "personalized-strategy-push",
+        "role-play-dialogue",
+        "scenario-design-execution",
+        "scenario-script-design"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    }
+  ],
+  "digitalTwins": [
+    {
+      "dirName": "销售副总裁",
+      "name": "销售副总裁",
+      "role": "VP of Sales"
+    }
+  ]
+}

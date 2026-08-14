@@ -1,0 +1,523 @@
+{
+  "title": "绩效管理全周期工作流",
+  "description": "覆盖从考核周期启动、目标设定、过程追踪、绩效评估、校准会、绩效面谈到结果应用的完整绩效管理闭环，支持OKR+KPI双体系和强制分布机制",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "考核周期启动与目标分解",
+      "type": "agent",
+      "prompt": "新考核周期已开始，请执行以下操作：1）获取本周期组织战略目标和各部门业务规划；2）发起目标分解研讨会通知（组织→部门→团队→个人）；3）提供目标设定模板和填写指引给各部门管理者；4）明确10个工作日内完成全员目标设定的时间要求。输出目标分解启动通知和各部门目标设定时间表。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "goal-setting-facilitator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "组织架构数据"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "个人目标设定与OKR/KPI对齐",
+      "type": "agent",
+      "prompt": "各部门已完成目标分解，员工正在设定个人目标。请执行：1）监控目标设定进度，Day 7对未完成者发送提醒；2）检查已提交目标的OKR与KPI一致性（OKR体现突破方向、KPI量化日常产出、两者不矛盾不重叠）；3）验证个人目标与部门目标的对齐度（要求≥80%）；4）标注需要退回修改的目标并提供具体改进建议。输出目标设定进度报告和对齐度分析。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "goal-setting-facilitator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "目标质量SMART审核",
+      "type": "agent",
+      "prompt": "对已提交的个人目标进行SMART质量审核。逐一检查每个目标的：Specific（描述清晰无歧义）、Measurable（有量化指标或里程碑）、Achievable（参考历史75-85分位值校准难度）、Relevant（与上级目标对齐）、Time-bound（有明确时间节点）。对不合格目标退回修改并附具体改进建议和同岗位优秀示例。对合格目标确认生效。输出SMART审核报告（含通过/退回清单）。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "goal-setting-facilitator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "历史绩效数据库"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "目标设定是否全部完成",
+      "type": "agent",
+      "prompt": "检查全员目标设定状态：如果全员目标在10个工作日内完成审核确认（含退回修改后重新通过），则流程继续进入过程跟踪阶段。如果存在超时未完成者，触发预警并通知HR BP跟进。判断条件：目标设定按时完成率是否达到100%。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "goal-setting-facilitator",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "OKR季度中期进度Check-in",
+      "type": "agent",
+      "prompt": "当前已进入季度中期（第6-7周），请发起OKR中期进度检查：1）通知全员更新OKR进度（0-100%完成率）；2）汇总各部门OKR进度数据；3）识别完成率<30%的目标并标注预警；4）对严重偏离（<20%）的目标建议评估是否需要调整目标或追加资源；5）将低进度目标清单推送给相关管理者制定追赶计划。输出中期进度报告和预警清单。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "performance-data-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "业务数据系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "评估流程启动与自评收集",
+      "type": "agent",
+      "prompt": "考核周期已结束，请启动绩效评估流程：1）发布评估启动通知（含规则说明、时间表、系统操作指引）；2）开放自评入口；3）确认评估关系配置（每位员工的上级评估人和360评估人名单已正确）；4）每日监控自评完成率，Day 2未提交者发送提醒，Day 3未提交者通知管理者；5）自评截止后锁定数据。确保自评3个工作日内完成率≥98%。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "performance-evaluation-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "HR信息系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "上级评估与360度评估收集",
+      "type": "agent",
+      "prompt": "自评已完成，请推进上级评估和360度评估的收集：1）开放上级评估入口，将员工自评内容同步给上级参考；2）发送360评估邀请给已确认的评估人（3-5位同事/协作方）；3）监控上级评估进度（Day 6催办、Day 7升级催办至HR总监）；4）监控360评估回收率；5）检查评估质量（评语≥100字、无极端评分异常）；6）截止后汇总计算综合评分（上级60%+自评10%+360评30%）。输出评估完成率报告和综合评分表。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "performance-evaluation-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "部门内校准会组织",
+      "type": "agent",
+      "prompt": "全部评估数据已汇总，请组织部门内校准会：1）计算各部门配额（按S10%/A20%/B50%/C15%/D5%和参评人数）；2）生成各部门当前分布与目标分布的对比；3）标注需重点讨论的边界案例和异常评分；4）协助部门负责人组织部门内校准会（各管理者陈述S和D评级理由）；5）记录校准会决议和调整理由。确保部门校准会在评估截止后3个工作日内完成。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "performance-evaluation-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "跨部门校准会与强制分布确认",
+      "type": "agent",
+      "prompt": "部门内校准已完成，请组织跨部门校准会：1）汇总各部门校准后的分布情况；2）识别分布异常部门（S超标>12%或D=0%）；3）协助HR总监主持跨部门校准会，要求异常部门提供说明和支撑材料；4）处理部门间配额调配需求；5）检查最终强制分布偏差（≤2%直接通过、2-5%需说明、>5%需HR总监审批）；6）最终结果锁定，产出全公司绩效分布确认表。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "performance-evaluation-coordinator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "强制分布偏差是否合规",
+      "type": "agent",
+      "prompt": "检查最终强制分布结果：如果各等级偏差均≤5%，流程继续进入绩效面谈阶段。如果存在偏差>5%的部门且未获HR总监审批例外，则退回该部门重新调整。判断条件：所有部门强制分布偏差≤5%或已获审批例外。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "performance-evaluation-coordinator",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "绩效面谈组织与辅导",
+      "type": "agent",
+      "prompt": "绩效评级已确认锁定，请启动绩效面谈流程：1）发布面谈通知，明确5个工作日内完成的时限要求；2）为管理者提供面谈准备辅导材料（含面谈结构化框架、C/D等级面谈话术指引、常见场景应对策略）；3）对首次面谈C/D等级员工的新晋管理者提供一对一辅导；4）每日监控面谈进度（Day 3提醒、Day 4通知上级、Day 5纳入管理者考核）；5）确认面谈记录双方签字率100%。输出面谈进度报告和质量抽检结果。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "performance-feedback-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "绩效等级分类与后续处理",
+      "type": "agent",
+      "prompt": "面谈完成后，根据员工绩效等级进行分类处理路由：S/A等级→制定发展加速计划和激励方案；B等级→确认维持方向和提升建议；C等级→制定关注辅导方案；D等级（首次）→制定正式改进方案；连续2次D等级→启动PIP流程。判断依据：员工当期绩效等级和历史绩效记录。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "performance-feedback-specialist",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "历史绩效数据库"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "高绩效员工发展计划制定",
+      "type": "agent",
+      "prompt": "针对S/A等级员工，请协助制定发展加速计划：1）与管理者讨论该员工的职业发展路径和下一步晋升方向；2）识别从当前到目标岗位的能力差距；3）设计针对性发展方案（挑战性项目安排、高层级mentor匹配、跨部门历练机会）；4）制定激励保留措施建议（薪酬调整、股权激励、公开认可）；5）将培训需求推送给培训发展scope。输出个人发展计划(IDP)和激励保留建议。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "performance-feedback-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "培训管理系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "低绩效员工改进方案与PIP启动",
+      "type": "agent",
+      "prompt": "针对C/D等级员工，请执行分类处理：1）C等级：制定30天关注辅导方案（聚焦2-3个改进项+周度辅导+每两周管理者确认进展）；2）D等级首次：制定60天正式改进方案（量化改进目标+密集支持+书面签字确认）；3）连续2次D等级：核实PIP启动条件（考核标准事先告知、过程公正、前次D已通知且提供改进机会），制定PIP计划书（30/60/90天阶段目标+支持措施+评估标准），提请HR总监审批。输出分类处理方案和PIP审批申请（如适用）。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "performance-feedback-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "法务合规系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "PIP执行跟踪与期满评估",
+      "type": "agent",
+      "prompt": "PIP已获批并正式启动，请执行跟踪管理：1）每两周组织check-in会议（管理者+HR+员工三方），记录阶段目标完成情况、态度变化、支持措施有效性；2）30天进行中期评估，判断改进趋势（有效→继续、无效→评估是否需调整支持）；3）全程确保书面记录完整（三方签字）；4）90天期满进行最终评估：达标→出具PIP结束通知回归正常管理；部分达标→评估是否延期30天；未达标→整理全套材料提交法务评估，制定处理方案（协商解除/调岗/按程序解除）。输出PIP跟踪记录和期满评估报告。",
+      "dependentTasks": [
+        "task-14"
+      ],
+      "metadata": {
+        "agentRef": "performance-feedback-specialist",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "法务合规系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "绩效数据分析与异常预警",
+      "type": "agent",
+      "prompt": "本周期评估已完成，请执行全面的绩效数据分析：1）组织层面：全公司绩效分布与目标对比、各周期趋势变化；2）部门层面：部门间绩效差异分析、部门绩效与业务达成一致性验证；3）管理者层面：各管理者评分分布特征分析（识别系统性偏高/偏低）；4）个人层面：绩效突变人员识别（跨两级变化）、高潜人才绩效跟踪、离职风险预测（绩效突降+司龄特征）；5）触发预警通知：连续2D→PIP预警、高潜绩效突降→离职预警、管理者偏差过大→校准辅导建议。输出季度绩效分析报告和异常预警清单。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "performance-data-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "业务数据系统",
+          "HR信息系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "绩效结果应用数据输出",
+      "type": "agent",
+      "prompt": "绩效评级已最终确认，请为结果应用场景产出数据支撑：1）年终奖计算：输出各员工绩效等级对应的奖金系数（S=2.0x, A=1.5x, B=1.0x, C=0.6x, D=0x）；2）调薪建议：基于绩效+薪酬竞争力的交叉分析产出调薪建议（S优先+超额, A正常, B低幅, C/D冻薪）；3）晋升数据：整理晋升候选人的历史绩效档案（近2年无C/D且至少1次A+）；4）人才九宫格：更新绩效×潜力矩阵数据。输出薪酬调整建议数据包、年终奖系数表、晋升绩效档案和九宫格更新数据。",
+      "dependentTasks": [
+        "task-10",
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "performance-data-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "薪酬系统",
+          "人才管理系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "年度绩效分析报告产出",
+      "type": "document",
+      "prompt": "基于本年度绩效数据分析结果，产出年度绩效分析白皮书：1）执行摘要：3-5个核心发现和关键行动建议；2）组织绩效全景：全公司分布趋势、目标达成率、与去年对比变化；3）部门深度分析：各部门绩效健康度评估、管理能力评价；4）人才洞察：高潜人才池变化、关键人才离职风险、继任者准备度；5）问题与建议：识别的系统性问题和改进建议（如某些管理者评估能力需提升、某些部门目标设定过于保守等）；6）下一周期展望：基于本期数据对下一周期的建议。报告格式为PPT管理层简报版（10页）+PDF详细版（20-30页）。",
+      "dependentTasks": [
+        "task-16",
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "performance-data-analyst",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "绩效管理系统",
+          "报告模板系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-12",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-9",
+      "target": "task-16"
+    },
+    {
+      "source": "task-10",
+      "target": "task-17"
+    },
+    {
+      "source": "task-16",
+      "target": "task-17"
+    },
+    {
+      "source": "task-16",
+      "target": "task-18"
+    },
+    {
+      "source": "task-17",
+      "target": "task-18"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "assessmentPeriod",
+      "value": "",
+      "description": "当前考核周期标识，如'2024-Q1'或'2024-Annual'",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "assessmentType",
+      "value": "",
+      "description": "评估类型：quarterly（季度OKR评估）或annual（年度绩效评估）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "totalHeadcount",
+      "value": "",
+      "description": "本周期参加绩效评估的员工总人数",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-4",
+      "name": "organizationGoals",
+      "value": "",
+      "description": "本周期组织战略目标文档（用于目标分解的输入）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "forcedDistributionRatio",
+      "value": "",
+      "description": "强制分布比例配置，默认为S10%/A20%/B50%/C15%/D5%",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "evaluationWeights",
+      "value": "",
+      "description": "综合评分权重配置，默认为上级60%+自评10%+360评30%",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "pipTriggerCondition",
+      "value": "",
+      "description": "PIP触发条件，默认为连续两个周期D评级",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "bonusCoefficients",
+      "value": "",
+      "description": "年终奖绩效系数映射，默认S=2.0/A=1.5/B=1.0/C=0.6/D=0",
+      "required": false,
+      "variableType": "string"
+    }
+  ]
+}

@@ -1,0 +1,259 @@
+---
+# Tenant: alpha (Tenant A) - orgShortId: a1b2c3d4e5f6
+# Apps:
+#   1. schedule-app (Schedule Manager)  shortId: 550e8400e29b
+#   2. creative-app (Creative Studio) shortId: 3f8a1c07d4b2
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: alpha
+  labels:
+    tenant: alpha
+    org-short-id: a1b2c3d4e5f6
+---
+# Tenant PG
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tenant-db
+  namespace: alpha
+spec:
+  serviceName: tenant-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tenant-db
+  template:
+    metadata:
+      labels:
+        app: tenant-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_DB
+              value: tenant_alpha
+            - name: POSTGRES_USER
+              value: tenant_admin
+            - name: POSTGRES_PASSWORD
+              value: alpha_pg_poc_123
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-db
+  namespace: alpha
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: tenant-db
+---
+# ========== App 1: schedule-app (Schedule Manager) ==========
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: schedule-app-frontend
+  namespace: alpha
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="zh-CN"><head><meta charset="UTF-8"><title>Schedule Manager - Tenant A</title>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#f5f7fa}
+    .header{background:linear-gradient(135deg,#1a237e,#283593);color:#fff;padding:16px 24px}
+    .header h1{font-size:20px}.header p{font-size:13px;opacity:.8;margin-top:4px}
+    .container{max-width:1200px;margin:24px auto;padding:0 24px}
+    .card{background:#fff;border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    .card h2{font-size:16px;margin-bottom:12px;color:#1a237e}
+    table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eee;font-size:14px}
+    th{background:#f5f7fa;color:#666;font-weight:600}tr:hover{background:#fafafa}
+    .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px}
+    .badge-active{background:#e8f5e9;color:#2e7d32}.badge-pending{background:#fff3e0;color:#ef6c00}
+    .badge-draft{background:#f5f5f5;color:#666}
+    .btn{padding:8px 16px;border:none;border-radius:4px;cursor:pointer;font-size:13px}
+    .btn-primary{background:#1a237e;color:#fff}.btn-primary:hover{background:#283593}
+    .ai-widget{position:fixed;bottom:24px;right:24px;width:360px;background:#fff;border-radius:12px;
+    box-shadow:0 4px 24px rgba(0,0,0,.15);overflow:hidden;z-index:1000}
+    .ai-header{background:#1a237e;color:#fff;padding:12px 16px;font-size:14px}
+    .ai-messages{height:200px;overflow-y:auto;padding:12px}
+    .ai-input{display:flex;border-top:1px solid #eee}
+    .ai-input input{flex:1;border:none;padding:12px;font-size:13px;outline:none}
+    .ai-input button{background:#1a237e;color:#fff;border:none;padding:12px 16px;cursor:pointer}
+    </style></head><body>
+    <div class="header"><h1>Schedule Manager系统</h1><p>Tenant A - 媒体资源Schedule Manager</p></div>
+    <div class="container">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h2>当前schedule</h2>
+          <button class="btn btn-primary" onclick="createSchedule()">+ 新建schedule</button>
+        </div>
+        <table><thead><tr><th>栏目</th><th>时段</th><th>客户</th><th>开始日期</th><th>结束日期</th><th>预算</th><th>状态</th></tr></thead>
+        <tbody id="schedules"></tbody></table>
+      </div>
+    </div>
+    <div class="ai-widget">
+      <div class="ai-header">Schedule Assistant</div>
+      <div class="ai-messages" id="ai-msgs"><div style="padding:8px;font-size:13px;color:#666">你好，我可以帮你查询和推荐schedule。</div></div>
+      <div class="ai-input"><input id="ai-input" placeholder="输入问题..." onkeydown="if(event.key==='Enter')sendAI()"><button onclick="sendAI()">发送</button></div>
+    </div>
+    <script>
+    const API=window.location.origin+'/api/data/schedules';
+    async function loadSchedules(){const r=await fetch(API);const d=await r.json();
+    document.getElementById('schedules').innerHTML=(d.records||[]).map(s=>`<tr>
+    <td>${s.channel||'-'}</td><td>${s.time_slot||'-'}</td><td>${s.client_name||'-'}
+    </td><td>${s.start_date||'-'}</td><td>${s.end_date||'-'}</td><td>${s.budget?'¥'+s.budget:'-'}
+    </td><td><span class="badge badge-${s.status==='active'?'active':s.status==='pending'?'pending':'draft'}">${s.status||'draft'}</span></td></tr>`).join('')}
+    async function createSchedule(){const ch=prompt('栏目名称:');if(!ch)return;const cl=prompt('客户名称:');
+    await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel:ch,client_name:cl,time_slot:'19:00-19:30',status:'draft',budget:0})});loadSchedules()}
+    async function sendAI(){const inp=document.getElementById('ai-input');const msg=inp.value;inp.value='';
+    document.getElementById('ai-msgs').innerHTML+=`<div style="padding:8px;font-size:13px;text-align:right">${msg}</div>`;
+    try{const r=await fetch('/api/agent/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});
+    const d=await r.json();document.getElementById('ai-msgs').innerHTML+=`<div style="padding:8px;font-size:13px;background:#f0f4ff;border-radius:8px;margin:4px 0">${d.reply||'思考中...'}</div>`}
+    catch(e){document.getElementById('ai-msgs').innerHTML+=`<div style="padding:8px;font-size:12px;color:#999">Agent未连接（独立运行模式）</div>`}}
+    loadSchedules();
+    </script></body></html>
+  nginx.conf: |
+    server { listen 80; root /usr/share/nginx/html; index index.html;
+    location / { try_files $uri $uri/ /index.html; }
+    location /api/ { proxy_pass http://localhost:3000/api/; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schedule-app-frontend
+  namespace: alpha
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: schedule-app-frontend
+  template:
+    metadata:
+      labels:
+        app: schedule-app-frontend
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: nginx.conf
+      volumes:
+        - name: html
+          configMap:
+            name: schedule-app-frontend
+        - name: nginx-conf
+          configMap:
+            name: schedule-app-frontend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: schedule-app-frontend
+  namespace: alpha
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: schedule-app-frontend
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: schedule-app-db
+  namespace: alpha
+type: Opaque
+stringData:
+  DATABASE_URL: "postgresql://app_550e8400e29b:schedule123@tenant-db.alpha.svc.cluster.local:5432/tenant_alpha"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schedule-app-backend
+  namespace: alpha
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: schedule-app-backend
+  template:
+    metadata:
+      labels:
+        app: schedule-app-backend
+    spec:
+      containers:
+        - name: runtime
+          image: app-runtime:poc
+          ports:
+            - containerPort: 3000
+          env:
+            - name: APP_ID
+              value: "550e8400-e29b-41d4-a716-446655440000"
+            - name: APP_SHORT_ID
+              value: "550e8400e29b"
+            - name: ORG_ID
+              value: "a1b2c3d4-e5f6-7890-abcd-111111111111"
+            - name: ORG_SHORT_ID
+              value: "a1b2c3d4e5f6"
+            - name: S3_BUCKET
+              value: "app-host-alpha-a1b2c3d4e5f6"
+            - name: S3_PREFIX
+              value: "550e8400-e29b-41d4-a716-446655440000/"
+            - name: SCHEMA_DEF
+              value: >-
+                {"tables":{"schedules":{"columns":{"id":"serial PRIMARY KEY","channel":"text","time_slot":"text","client_name":"text","start_date":"date","end_date":"date","budget":"numeric","status":"text DEFAULT 'draft'","created_at":"timestamptz DEFAULT now()"}}}}
+            - name: JWT_SECRET
+              value: "alpha-schedule-jwt-secret"
+          envFrom:
+            - secretRef:
+                name: schedule-app-db
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: schedule-app-backend
+  namespace: alpha
+spec:
+  ports:
+    - port: 3000
+      targetPort: 3000
+  selector:
+    app: schedule-app-backend
+---
+# Traefik IngressRoute for schedule-app
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: schedule-app
+  namespace: alpha
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`550e8400e29b.app.poc.local`)
+      kind: Rule
+      services:
+        - name: schedule-app-frontend
+          port: 80

@@ -1,0 +1,399 @@
+{
+  "title": "合规审计全流程工作流",
+  "description": "覆盖从年度合规风险评估到审计执行、整改跟踪、制度更新和培训的完整合规审计PDCA循环，确保企业合规体系持续有效运行",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "年度合规风险全面评估",
+      "type": "agent",
+      "prompt": "执行年度合规风险全面评估：1)梳理企业面临的所有合规义务（反商业贿赂、数据合规、反洗钱、出口管制、行业特定要求等领域）；2)收集各业务部门的风险自评数据和外部环境信息（监管趋势、行业处罚案例）；3)运用5×5风险矩阵评估各风险事件的可能性和影响程度；4)生成风险热力图，将风险分为高（16-25分）、中（9-15分）、低（1-8分）三级；5)输出TOP 10风险清单和风险登记册；6)提出审计资源配置建议。评估须在Q1完成，覆盖率要求100%。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "compliance-risk-scanner",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "法规数据库",
+          "企业ERP系统",
+          "行业监管信息平台"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "编制年度审计计划",
+      "type": "agent",
+      "prompt": "基于年度合规风险评估结果编制审计计划：1)按风险等级确定审计频次——高风险领域每半年审计一次、中风险年度审计、低风险两年轮换审计；2)确定每个审计项目的类型（全面/专项/跟踪）、范围、时间窗口；3)分配审计人员和预算资源，确保高风险领域优先保障；4)预留15-20%资源用于计划外专项审计；5)编制年度审计计划书和季度排期表。计划须在4月15日前完成并提交合规委员会审批。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "项目管理系统",
+          "人力资源系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "日常合规风险持续监控",
+      "type": "agent",
+      "prompt": "执行日常合规风险持续监控工作：1)实时追踪法律法规、监管政策、行业标准的最新动态，发现变更后24小时内完成初步影响评估；2)持续扫描企业内部数据源（费用报销、交易记录、数据访问日志等），运用规则引擎和统计异常检测识别违规信号；3)重点监控：超500元礼品招待、制裁名单交易匹配、异常数据访问、大额/高频可疑交易；4)生成风险预警并按四级标准分级（紧急/高/中/低）；5)每条预警包含触发规则、证据摘要、影响评估和处置建议。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "compliance-risk-scanner",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "费用报销系统",
+          "ERP系统",
+          "数据访问日志系统",
+          "制裁名单数据库"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "判断风险预警严重程度",
+      "type": "agent",
+      "prompt": "对风险扫描引擎产生的预警进行严重程度判断：评估预警等级是否达到需要启动专项审计/调查的标准。判断条件：1)紧急级别（明确违反强制性法规）或高级别（高置信度异常模式）→触发专项审计流程；2)中级别（需进一步确认的可疑行为）→安排近期审计关注；3)低级别（偏离基线但可能有合理解释）→纳入观察项。同时判断是否涉嫌犯罪：如涉嫌犯罪则固定初步证据后立即上报法务总监。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "下达审计通知并准备审计",
+      "type": "agent",
+      "prompt": "执行审计准备和通知下达工作：1)提前5个工作日向被审计部门下达正式审计通知，内容包括审计目的、范围、时间安排、团队成员和配合要求；2)编制具体审计方案（目标、方法、重点关注领域）；3)设计审计检查清单，按合规领域细化到具体检查要点；4)准备资料需求清单（需被审计部门3个工作日内提供的文件和数据）；5)组建审计团队并进行任务分工；6)了解被审计领域的最新法规要求和前次审计发现。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "OA审批系统",
+          "文档管理系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "执行现场合规审计检查",
+      "type": "agent",
+      "prompt": "执行现场合规审计检查全流程：1)接收并检查被审计部门提交的资料完整性；2)按检查清单逐项核查，每项标注'合规/部分合规/不合规/不适用'；3)执行控制测试——模拟业务场景验证控制措施有效性；4)执行穿行测试——选取样本追踪完整流程执行情况；5)人员访谈——评估关键岗位的合规意识和制度知晓度；6)数据分析——对交易数据和日志进行异常模式检测；7)证据固定——所有发现必须有书面证据支撑，证据编号（CA-年份-项目号-序号）归档，确保充分性、相关性、可靠性；8)与被审计部门进行事实确认会，听取解释和申辩。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "文档管理系统",
+          "数据分析平台"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "编写合规审计报告",
+      "type": "agent",
+      "prompt": "编写合规审计报告：1)按FCIA格式整理所有审计发现——Finding(事实描述)、Cause(根本原因分析，运用5-Why方法)、Impact(风险影响评估和量化)、Action(整改建议和时限)；2)审计发现按风险等级排序——高风险（立即停止+48小时上报+专项调查）、中风险（15天整改+管理层通报）、低风险（30天整改）；3)编写一页执行摘要面向管理层；4)给出总体合规评价（合规/基本合规/不合规）；5)制定整改跟踪表（问题编号、责任人、时限、验证方式）；6)确保每项发现标注证据编号，法条引用准确；7)现场结束后5个工作日内完成报告。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "文档管理系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "判断审计发现风险等级",
+      "type": "agent",
+      "prompt": "对审计报告中的发现进行风险等级分类处理决策：1)高风险发现（可能导致重大经济损失>100万、监管处罚或刑事风险）→要求立即停止违规行为，48小时内上报管理层，启动专项调查；2)中风险发现（可能导致10-100万损失或监管关注）→限期15个工作日整改，同时通报管理层；3)低风险发现（控制缺陷但未造成实质影响）→限期30个工作日整改。判断是否存在需要制度修订的系统性问题（触发制度更新流程）。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "整改方案制定与跟踪验证",
+      "type": "agent",
+      "prompt": "管理审计发现的整改全过程：1)接收被审计部门5个工作日内提交的整改方案；2)审核方案充分性——是否针对根本原因、措施是否可行、时限是否合理；3)确认整改责任人和完成日期；4)按风险等级设定跟踪频率——高风险每3天、中风险每周、低风险到期前5天；5)整改完成后执行验证——检查证据、测试控制有效性、确认问题未重现；6)验证通过则关闭，未通过则要求继续整改或升级处理；7)逾期未整改的按升级机制处理（首次升级部门负责人，二次升级合规委员会）；8)年度整改关闭率目标≥90%。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "OA审批系统",
+          "项目管理系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "评估制度修订需求并更新制度",
+      "type": "agent",
+      "prompt": "基于审计发现和法规变更评估制度修订需求并执行更新：1)接收触发信号（审计发现制度缺陷、法规变更通知、业务模式变化）；2)评估影响范围——识别需修订的制度文件和具体条款；3)按三级制度架构确定修订层级（总纲/专项制度/操作指引）；4)编写修订稿——确保条款SMART化（具体、可衡量、可实现、相关、有时限），使用明确的义务性表述；5)征求相关部门意见（5个工作日）；6)提交审批发布；7)更新法规-制度映射表；8)通知培训督导更新培训材料。法规变更后30天内完成制度修订。",
+      "dependentTasks": [
+        "task-8",
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "compliance-framework-architect",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "文档管理系统",
+          "法规数据库"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "制定和执行合规培训计划",
+      "type": "agent",
+      "prompt": "制定和执行合规培训计划：1)基于风险评估结果和审计发现确定培训重点领域；2)设计课程体系——全员通识（反贿赂基本规则、数据保护基础、举报渠道）和关键岗位专项（采购反贿赂、财务反洗钱、IT数据安全）；3)编排月度培训日历，组合使用线上课程、线下集中、微学习、案例研讨；4)确保培训内容与最新制度同步（制度更新后30天内更新教材）；5)组织培训考核——通识≥80分通过、关键岗位≥90分通过；6)追踪覆盖率（100%全员）和通过率（关键岗位≥95%）；7)为未通过者安排15天内补考，二次不通过启动岗位适配评估；8)运用柯克帕特里克四级模型评估培训效果。",
+      "dependentTasks": [
+        "task-10",
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "compliance-training-supervisor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "培训管理系统(LMS)",
+          "人力资源系统",
+          "考试系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "编制年度合规报告",
+      "type": "document",
+      "prompt": "编制年度合规报告提交合规委员会：1)汇总全年审计执行情况（计划完成率、审计覆盖领域、审计发现数量和严重程度分布）；2)分析全年整改情况（关闭率、平均关闭时间、逾期情况）；3)统计合规事件和监管处罚情况；4)分析合规风险趋势变化（与上年对比，新增和消除的风险）；5)评估合规体系运行有效性（基于KPI达成情况）；6)汇总培训数据（覆盖率、通过率、效果评估）；7)总结制度建设成果（新建/修订制度数量、覆盖度提升）；8)提出下年度重点工作方向和改进建议；9)12月31日前完成并提交。",
+      "dependentTasks": [
+        "task-9",
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "数据分析平台",
+          "文档管理系统"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "合规举报受理与调查处理",
+      "type": "agent",
+      "prompt": "管理合规举报的全流程处理（15个工作日闭环）：1)Day1-通过合规举报渠道接收举报，登记基本信息，确认匿名保护机制有效，向实名举报人发送受理确认；2)Day1-3初步评估——判断是否属于合规事项、是否有具体线索可调查、严重程度和紧迫性，决定是否启动正式调查；3)Day3-12调查执行——制定计划、收集证据（文档/访谈/数据）、固定证据、注意保密和利益冲突回避；4)Day12-14形成结论（属实/部分属实/不属实/无法确认）并编写调查报告；5)Day14-15审批结论、实施处理、反馈举报人（保护隐私）；6)涉嫌犯罪的立即暂停并上报法务总监；7)全程保护举报人身份，禁止打击报复。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "compliance-audit-executor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "举报管理系统",
+          "OA审批系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-1",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-2",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-8",
+      "target": "task-10"
+    },
+    {
+      "source": "task-3",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-9",
+      "target": "task-11"
+    },
+    {
+      "source": "task-9",
+      "target": "task-12"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "assessmentYear",
+      "value": "",
+      "description": "合规风险评估的年度标识，格式为YYYY",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "riskLevel",
+      "value": "",
+      "description": "风险等级分类，取值为高/中/低，决定审计频次和整改时限",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "auditScope",
+      "value": "",
+      "description": "审计范围描述，包含审计覆盖的合规领域和被审计部门",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "auditFindings",
+      "value": "",
+      "description": "审计发现事项列表，含问题描述、风险等级、证据编号",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "remediationStatus",
+      "value": "",
+      "description": "整改状态跟踪，取值为待整改/整改中/待验证/已关闭/已升级",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "regulatoryChangeInfo",
+      "value": "",
+      "description": "法规变更信息，含法规名称、变更内容摘要、生效日期、影响等级",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "trainingCoverageRate",
+      "value": "",
+      "description": "培训覆盖率统计数据，含全员覆盖率和关键岗位通过率",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "whistleblowerCaseId",
+      "value": "",
+      "description": "举报案件编号，用于全程跟踪和档案管理",
+      "required": false,
+      "variableType": "string"
+    }
+  ]
+}

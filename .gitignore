@@ -1,0 +1,25 @@
+.DS_Store
+*.code-workspace
+**/node_modules/
+**/dist/
+**/coverage/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+!**/.env.example
+.kiro/skills
+super-agent-workspaces/
+docs/
+
+# CDK synthesis output (contains AWS account IDs, IAM role ARNs, templates)
+infra/cdk.out/
+
+# CDK context cache (contains VPC IDs, subnet IDs, account IDs)
+infra/cdk.context.json
+
+# Frontend production environment (contains Cognito secrets and IPs)
+frontend/.env.production
+**/cdk.out/
+**/cdk.context.json

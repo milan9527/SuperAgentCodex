@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Agent — 新方向设计预览</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwindcss.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            gray: {
+              750: '#2d3748',
+              850: '#1a202c',
+              950: '#030712',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .gradient-text {
+      background: linear-gradient(135deg, #818cf8, #a78bfa, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .card-hover { transition: all 0.3s ease; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
+  </style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+  <!-- Navigation Hub -->
+  <div class="min-h-screen flex flex-col items-center justify-center p-8">
+    <div class="text-center mb-12">
+      <div class="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+        <span class="text-white font-bold text-2xl">S</span>
+      </div>
+      <h1 class="text-4xl font-bold mb-3">
+        <span class="gradient-text">Super Agent</span> 新方向设计
+      </h1>
+      <p class="text-gray-400 text-lg max-w-2xl mx-auto">
+        三个差异化功能方向的静态设计预览，风格与现有平台保持一致
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl w-full">
+      <!-- Card 1: Industry SOP Templates -->
+      <a href="sop-templates.html" class="card-hover group">
+        <div class="relative rounded-2xl p-6 border border-white/[0.06] bg-gray-900/60 backdrop-blur-xl overflow-hidden h-[220px] hover:border-amber-500/50 hover:bg-gray-900/80 transition-all duration-300">
+          <div class="absolute -right-4 -top-4 text-amber-500/10">
+            <svg class="w-24 h-24" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h5v7h7v9H6z"/><path d="M8 12h8v2H8zm0 4h5v2H8z"/></svg>
+          </div>
+          <div class="relative">
+            <div class="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center mb-4">
+              <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            </div>
+            <h3 class="text-xl font-semibold text-white mb-2 group-hover:text-amber-400 transition-colors">行业 SOP 模板库</h3>
+            <p class="text-gray-400 text-sm leading-relaxed">预置金融、HR、IT 运维等行业标准流程模板，企业开箱即用</p>
+            <div class="mt-4 flex items-center gap-2 text-xs text-amber-400/70">
+              <span class="px-2 py-0.5 rounded-full bg-amber-500/10">内容壁垒</span>
+              <span class="px-2 py-0.5 rounded-full bg-amber-500/10">快速落地</span>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <!-- Card 2: Compliance Engine -->
+      <a href="compliance-engine.html" class="card-hover group">
+        <div class="relative rounded-2xl p-6 border border-white/[0.06] bg-gray-900/60 backdrop-blur-xl overflow-hidden h-[220px] hover:border-emerald-500/50 hover:bg-gray-900/80 transition-all duration-300">
+          <div class="absolute -right-4 -top-4 text-emerald-500/10">
+            <svg class="w-24 h-24" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+          </div>
+          <div class="relative">
+            <div class="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center mb-4">
+              <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            </div>
+            <h3 class="text-xl font-semibold text-white mb-2 group-hover:text-emerald-400 transition-colors">Agent 行为合规引擎</h3>
+            <p class="text-gray-400 text-sm leading-relaxed">基于 Hooks 的实时行为拦截与审计，满足金融医疗合规要求</p>
+            <div class="mt-4 flex items-center gap-2 text-xs text-emerald-400/70">
+              <span class="px-2 py-0.5 rounded-full bg-emerald-500/10">企业付费点</span>
+              <span class="px-2 py-0.5 rounded-full bg-emerald-500/10">合规刚需</span>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <!-- Card 3: Agent-as-a-Service -->
+      <a href="agent-network.html" class="card-hover group">
+        <div class="relative rounded-2xl p-6 border border-white/[0.06] bg-gray-900/60 backdrop-blur-xl overflow-hidden h-[220px] hover:border-cyan-500/50 hover:bg-gray-900/80 transition-all duration-300">
+          <div class="absolute -right-4 -top-4 text-cyan-500/10">
+            <svg class="w-24 h-24" fill="currentColor" viewBox="0 0 24 24"><path d="M17 20h-2v-2a3 3 0 00-3-3H8a3 3 0 00-3-3V8a3 3 0 003-3h4a3 3 0 003 3v2h2a3 3 0 013 3v4a3 3 0 01-3 3z"/><circle cx="9" cy="7" r="4"/><circle cx="17" cy="15" r="4" opacity="0.5"/></svg>
+          </div>
+          <div class="relative">
+            <div class="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center mb-4">
+              <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+            </div>
+            <h3 class="text-xl font-semibold text-white mb-2 group-hover:text-cyan-400 transition-colors">跨组织 Agent 网络</h3>
+            <p class="text-gray-400 text-sm leading-relaxed">Agent-as-a-Service，构建 B2B 智能体协作网络与 API 经济</p>
+            <div class="mt-4 flex items-center gap-2 text-xs text-cyan-400/70">
+              <span class="px-2 py-0.5 rounded-full bg-cyan-500/10">平台效应</span>
+              <span class="px-2 py-0.5 rounded-full bg-cyan-500/10">长期壁垒</span>
+            </div>
+          </div>
+        </div>
+      </a>
+    </div>
+
+    <p class="text-gray-600 text-sm mt-12">点击卡片查看各方向的详细设计页面</p>
+  </div>
+</body>
+</html>

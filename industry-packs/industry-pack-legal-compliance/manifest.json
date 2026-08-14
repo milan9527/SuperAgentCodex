@@ -1,0 +1,107 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2025-01-21T10:00:00.000Z",
+  "generator": "super-agent-batch-v2",
+  "industry": {
+    "id": "legal-compliance",
+    "name": "法律合规",
+    "icon": "⚖️",
+    "color": "#1a3a5c"
+  },
+  "stats": {
+    "scopeCount": 3,
+    "agentCount": 11,
+    "skillCount": 38,
+    "workflowCount": 3,
+    "twinCount": 1,
+    "sopCount": 3
+  },
+  "scopes": [
+    {
+      "dirName": "contract-review-management",
+      "name": "合同审查与管理",
+      "agents": [
+        "contract-clause-reviewer",
+        "contract-drafting-assistant",
+        "contract-risk-assessor",
+        "contract-lifecycle-manager"
+      ],
+      "skills": [
+        "clause-customization",
+        "contract-clause-analysis",
+        "contract-drafting",
+        "contract-ledger-management",
+        "contract-revision-suggestion",
+        "contract-risk-rating",
+        "contract-signing-management",
+        "contract-template-management",
+        "counterparty-risk-assessment",
+        "expiry-renewal-management",
+        "legal-opinion-drafting",
+        "legal-risk-identification",
+        "performance-monitoring"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "compliance-audit",
+      "name": "合规审计",
+      "agents": [
+        "compliance-risk-scanner",
+        "compliance-audit-executor",
+        "compliance-framework-architect",
+        "compliance-training-supervisor"
+      ],
+      "skills": [
+        "anomaly-detection-analysis",
+        "audit-execution-management",
+        "audit-plan-development",
+        "audit-report-writing",
+        "compliance-framework-design",
+        "compliance-policy-drafting",
+        "compliance-risk-assessment",
+        "regulatory-change-monitoring",
+        "regulatory-mapping",
+        "training-assessment-design",
+        "training-effectiveness-evaluation",
+        "training-plan-development",
+        "whistleblower-investigation"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "intellectual-property-management",
+      "name": "知识产权管理",
+      "agents": [
+        "patent-strategy-analyst",
+        "ip-portfolio-administrator",
+        "ip-enforcement-specialist"
+      ],
+      "skills": [
+        "competitor-patent-monitoring",
+        "deadline-monitoring",
+        "enforcement-strategy",
+        "evidence-preservation",
+        "infringement-defense",
+        "infringement-monitoring",
+        "ip-asset-ledger-management",
+        "ip-portfolio-reporting",
+        "oa-response-management",
+        "patent-application-strategy",
+        "patent-search-analysis",
+        "trademark-registration-management"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    }
+  ],
+  "digitalTwins": [
+    {
+      "dirName": "法务总监",
+      "name": "法务总监",
+      "role": "General Counsel / 总法律顾问"
+    }
+  ]
+}

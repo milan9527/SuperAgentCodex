@@ -1,0 +1,527 @@
+{
+  "title": "报价与合同管理流程",
+  "description": "覆盖从商机报价需求触发、产品配置、定价计算、折扣审批、报价发送、合同起草、条款审核、风险评估、签署归档的完整业务流程",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "接收商机报价需求",
+      "type": "action",
+      "prompt": "接收从商机管理系统传入的报价需求信息。验证需求信息完整性，确认以下必填字段：客户公司名称、联系人、产品需求清单、用户规模、预期上线时间。如信息不完整，列出缺失项并请求销售人员在2小时内补全。输出需求确认状态和完整的需求信息包。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "quotation-configurator",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "CRM系统",
+          "商机管理"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "判定报价类型",
+      "type": "agent",
+      "prompt": "根据客户需求信息判定报价类型。判定规则：如果所有产品需求均可由标准产品目录满足且无定制开发需求，则为'标准报价'；如果包含定制开发需求、非标准产品组合或需要跨部门确认可行性，则为'定制报价'。输出报价类型判定结果和判定依据。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "quotation-configurator",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "产品目录系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "标准产品方案配置",
+      "type": "agent",
+      "prompt": "基于客户需求从产品目录中配置标准产品组合方案。执行步骤：1）匹配需求与产品功能；2）检查产品间依赖关系和兼容性；3）生成1-3个推荐方案（基础版/标准版/旗舰版）；4）确认所有产品库存/License可用性。输出产品配置方案清单，每个方案包含SKU明细、数量、规格说明。整个过程需在2小时内完成。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "quotation-configurator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "产品目录系统",
+          "库存管理"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "定制方案可行性确认",
+      "type": "agent",
+      "prompt": "对于定制报价需求，协调产品和交付团队确认可行性和成本。执行步骤：1）将定制需求描述发送给产品团队评估技术可行性；2）联系交付团队评估实施工期和人力成本；3）汇总可行性确认结果和成本估算；4）基于确认结果配置产品方案。如产品团队需要超过1个工作日确认，及时向销售人员通报进展。输出定制方案配置和成本明细。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "quotation-configurator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "产品目录系统",
+          "项目管理系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "执行定价计算",
+      "type": "agent",
+      "prompt": "基于产品配置方案执行完整定价计算。步骤：1）查询各SKU标准目录价（确认价格本版本有效）；2）检查并应用适用的折扣规则（批量折扣阶梯、捆绑优惠、年框协议价）；3）计算综合折扣率，判断是否需要审批及审批层级；4）计算毛利率，与红线（60%）对比；5）计算含税和不含税总价。输出定价计算结果，包括目录总价、折扣明细、净价、税额、折扣审批层级判断。",
+      "dependentTasks": [
+        "task-3",
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "quotation-configurator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "价格管理系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "判断是否需要折扣审批",
+      "type": "agent",
+      "prompt": "根据定价计算结果判断是否需要折扣审批流程。判断规则：如果综合折扣率为0%或折扣在年框协议约定范围内，则无需审批直接进入报价单生成；如果综合折扣率>0%且超出免审范围，则需要进入折扣审批流程。输出判断结果：'无需审批'或'需要审批'及对应审批层级。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "discount-approval-controller",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "启动折扣审批流程",
+      "type": "agent",
+      "prompt": "启动折扣审批流程。步骤：1）确认折扣率对应的审批层级（≤10%销售经理/≤20%总监/≤30%VP/>30%CEO）；2）确定审批人（基于销售人员组织架构，检查审批人是否可用）；3）准备决策辅助信息包（客户LTV、竞品价格参考、历史同类折扣水平、本季度折扣预算进度、客户累计折扣率）；4）发送审批请求；5）启动4小时SLA计时。确保折扣原因已记录（竞争压力/批量采购/战略客户/年框协议/渠道合作）。输出审批工单编号和预期完成时间。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "discount-approval-controller",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "审批系统",
+          "CRM系统",
+          "BI系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "监控审批时效并处理结果",
+      "type": "agent",
+      "prompt": "持续监控折扣审批进度并处理结果。监控规则：4小时未审批发送催办；6小时发送升级预警；8小时自动升级到上级代审。结果处理：审批通过→记录意见并通知报价配置专家更新报价单；审批驳回→记录驳回原因并通知销售人员提供调整方向；有条件通过→记录条件并确认销售人员接受。输出审批最终结果、耗时统计、是否发生升级。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "discount-approval-controller",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "审批系统",
+          "企业IM"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "生成正式报价单",
+      "type": "agent",
+      "prompt": "生成格式规范的正式报价单文档。步骤：1）分配唯一报价编号（QT-YYYYMMDD-XXX）；2）填充客户信息和我方信息；3）编制产品明细表（分类展示、含单价和小计）；4）展示折扣信息（如有）；5）填充商务条款（付款条件、交付条件、售后服务、有效期30天）；6）应用企业标准模板格式；7）生成PDF和Word版本；8）内部校审确认金额计算无误。输出正式报价单PDF、报价编号、有效期截止日期。",
+      "dependentTasks": [
+        "task-8",
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "quotation-configurator",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "文档管理系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "判断客户反馈结果",
+      "type": "agent",
+      "prompt": "评估客户对报价单的反馈结果。三种可能：1）'客户接受'——客户确认接受报价，准备进入合同流程；2）'客户议价'——客户提出价格异议或要求更多折扣，需要调整报价（可能需要重新审批）；3）'报价过期'——超过30天有效期客户未回复，报价作废需重新评估。输出客户反馈类别和后续流程方向。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "quotation-configurator",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "CRM系统"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "判定合同类型并生成草稿",
+      "type": "agent",
+      "prompt": "基于确认报价的商务条件判定合同类型并生成合同草稿。步骤：1）判定合同类型（标准合同：所有条款使用标准模板/非标合同：有特殊条款需求/甲方模板：客户要求使用其模板）；2）选择对应合同模板最新版本；3）自动填充商务信息（甲方信息、标的物、金额、付款条件、交付时间线、合同期限）；4）分配合同编号（CT-YYYY-BU-XXXX）；5）标记非标条款位置并生成审核要点清单。输出合同草稿、合同编号、非标条款清单、审核要求等级。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-reviewer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "合同模板库",
+          "文档管理系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "判断是否需要法务深度审核",
+      "type": "agent",
+      "prompt": "根据合同类型和非标条款标记判断是否需要法务深度审核。判断规则：标准合同且无非标条款标记→内部简审通道（1工作日）；含非标条款或客户使用甲方模板→法务深度审核通道（5工作日）。输出审核通道类型和预估审核时长。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-reviewer",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "执行法务深度审核与风险评估",
+      "type": "agent",
+      "prompt": "协调法务团队完成合同深度审核，并对非标条款进行风险评估。步骤：1）将合同草稿和审核要点提交法务团队；2）追踪法务审核进度（3天未回复催办）；3）同时将标记的风险条款提交进行五维度风险评估（付款条件/交付承诺/知识产权/数据安全/商业条款）；4）对每个风险条款输出风险等级（高/中/低）和量化影响评估；5）汇总法务审核意见和风险评估结论。输出：法务书面审核意见（通过/有条件通过/不通过）、风险评估报告、条款修改建议。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "contract-risk-analyst",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "法务管理系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "管理条款协商过程",
+      "type": "agent",
+      "prompt": "管理合同条款协商的完整过程。步骤：1）基于风险评估和法务意见生成条款修改建议（理想版本和底线版本）；2）准备条款交换策略（如客户在A条款不让步，我方在B条款要求对等保护）；3）将修改建议通过销售人员传达给客户；4）记录客户每轮反馈意见；5）评估客户修改请求的可接受性；6）更新合同版本并标记修改痕迹；7）如协商超过3轮无法达成一致，准备升级简报建议VP层面介入。输出协商历史记录、当前合同版本、未决条款清单、协商状态（达成一致/继续协商/需升级）。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-reviewer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "文档管理系统",
+          "企业IM"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "检查合同金额是否需要财务会签",
+      "type": "agent",
+      "prompt": "检查合同金额是否达到财务总监会签阈值。规则：合同金额≥100万人民币→必须触发财务总监会签流程；合同金额<100万→直接进入签署流程。输出是否需要会签的判断结果。",
+      "dependentTasks": [
+        "task-14",
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-reviewer",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "执行财务总监会签",
+      "type": "agent",
+      "prompt": "发起并管理财务总监会签流程。步骤：1）准备会签材料：合同摘要、金额明细、付款条件、交付时间线、对季度收入预测的影响分析；2）提交财务总监审核，重点确认：收入确认方式是否符合会计准则、回款计划是否合理、是否存在收入确认风险；3）追踪会签进度（SLA 3个工作日）；4）记录会签意见；5）会签通过后标记合同可进入签署环节。输出会签意见书、收入确认方式确认、回款计划确认。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-reviewer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "财务系统",
+          "审批系统"
+        ]
+      },
+      "position": {
+        "x": 4300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "执行合同签署",
+      "type": "agent",
+      "prompt": "执行合同签署流程。步骤：1）最终确认合同文本与协商达成版本一致；2）确认签署方式（优先电子签署）；3）电子签署：通过e签宝/法大大发起签署请求，设置签署顺序，发送签署链接给对方；纸质签署：打印正本，内部盖章，寄送对方；4）追踪签署进度：第1天/第3天/第5天分级催签；5）签署完成后验证签名完整性和文件一致性。输出已签署合同文件、签署完成时间、签署方式记录。",
+      "dependentTasks": [
+        "task-16",
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-reviewer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "电子签署平台",
+          "企业IM"
+        ]
+      },
+      "position": {
+        "x": 4600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "合同归档与系统同步",
+      "type": "agent",
+      "prompt": "在合同签署完成后24小时内完成归档和系统同步。步骤：1）建立归档索引：合同编号、客户名称、合同类型、金额（含税/不含税）、签约日期、起止日期、销售负责人、付款条件摘要；2）电子合同直接入库，纸质合同扫描（300dpi+）后入库；3）CRM系统更新：商机状态变更为'已签约'，录入合同编号和金额；4）通知客户成功团队启动交接流程（传递合同详情、商务条件、承诺清单、交付时间线）；5）通知财务团队录入合同台账；6）设置合同到期提醒（到期前90天触发续约）。输出归档确认记录、CRM同步状态、通知发送记录。",
+      "dependentTasks": [
+        "task-17"
+      ],
+      "metadata": {
+        "agentRef": "contract-drafting-reviewer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "文档管理系统",
+          "CRM系统",
+          "财务系统",
+          "企业IM"
+        ]
+      },
+      "position": {
+        "x": 4900,
+        "y": 100
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-2",
+      "target": "task-4"
+    },
+    {
+      "source": "task-3",
+      "target": "task-5"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-6",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-14",
+      "target": "task-15"
+    },
+    {
+      "source": "task-12",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-16",
+      "target": "task-17"
+    },
+    {
+      "source": "task-15",
+      "target": "task-17"
+    },
+    {
+      "source": "task-17",
+      "target": "task-18"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "opportunityId",
+      "value": "",
+      "description": "商机ID，从CRM系统传入的商机唯一标识",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "customerInfo",
+      "value": "",
+      "description": "客户完整信息，包含公司名称、联系人、行业、规模等",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-3",
+      "name": "productRequirements",
+      "value": "",
+      "description": "客户产品需求清单，包含需求描述、数量、优先级",
+      "required": true,
+      "variableType": "array"
+    },
+    {
+      "variableId": "var-4",
+      "name": "quotationType",
+      "value": "",
+      "description": "报价类型：standard（标准报价）或 custom（定制报价）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "discountRate",
+      "value": "",
+      "description": "综合折扣率百分比，用于判定审批层级",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-6",
+      "name": "contractAmount",
+      "value": "",
+      "description": "合同金额（人民币），用于判定是否需要财务总监会签",
+      "required": true,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-7",
+      "name": "contractType",
+      "value": "",
+      "description": "合同类型：standard（标准合同）、nonStandard（非标合同）、clientTemplate（甲方模板）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "signingMethod",
+      "value": "",
+      "description": "签署方式：electronic（电子签署）或 paper（纸质签署）",
+      "required": true,
+      "variableType": "string"
+    }
+  ]
+}

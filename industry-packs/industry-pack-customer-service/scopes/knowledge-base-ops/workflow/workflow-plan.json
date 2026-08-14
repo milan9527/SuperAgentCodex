@@ -1,0 +1,503 @@
+{
+  "title": "知识库运营全流程",
+  "description": "覆盖知识库内容从需求识别、编写创建、审核发布到持续监控优化的完整运营流程，确保知识库覆盖率>=95%、搜索命中率>=90%、AI回答准确率>=95%",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "内容需求信号监控与采集",
+      "type": "agent",
+      "prompt": "持续监控所有内容需求信号源：1)产品发布计划日历，识别未来30天内上线的产品/功能；2)投诉管理Scope推送的知识盲区信息；3)搜索无结果TOP20关键词日报；4)知识库有效期预警队列（30天内到期文章）；5)业务政策变更通知。对每个识别到的信号，提取核心需求信息并记录来源、发现时间和初步影响评估。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "content-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "产品发布计划系统",
+          "投诉管理系统",
+          "知识库搜索引擎",
+          "业务通知渠道"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "需求优先级评估与立项",
+      "type": "agent",
+      "prompt": "对采集到的内容需求进行优先级评估。评估维度：影响客户量（高>1000/中100-1000/低<100）、业务紧急度（是否有时限约束）、当前替代方案（完全空白vs有部分覆盖）。按规则判定优先级：P0（新产品上线前5天仍无知识、监管变更、重大故障）、P1（投诉根因知识缺失、搜索无结果TOP5）、P2（过期内容、搜索无结果TOP6-20）、P3（优化性更新）。为每个需求创建工单，指定内容类型、责任人和交付时限。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "content-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "工单管理系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "判断是否为紧急发布场景",
+      "type": "agent",
+      "prompt": "评估当前需求是否满足紧急发布条件：1)重大系统故障影响>100客户/小时；2)监管政策即时生效；3)产品重大安全漏洞；4)舆情事件需统一口径。如满足任一条件且已获得管理层授权，进入紧急发布通道；否则进入常规编写流程。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "content-lifecycle-manager",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "紧急内容编写与快速发布",
+      "type": "agent",
+      "prompt": "使用紧急发布精简模板，在2小时内完成内容编写。仅包含核心信息：问题描述、影响范围、临时解决方案、注意事项。执行基础事实准确性检查（与事故现状一致、方案可执行）。发布后设置最高搜索权重，同步推送AI系统，通过IM通知所有在线坐席。文章顶部添加紧急标记，设定72小时自动过期。同时创建48小时补审工单。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-authoring-assistant",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库发布系统",
+          "AI客服系统",
+          "内部IM系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "确定内容类型并选用模板",
+      "type": "agent",
+      "prompt": "根据需求工单中的主题和素材特征，确定最匹配的内容类型：FAQ（明确问答对的高频问题）、操作指南（分步骤操作类）、故障排查手册（条件判断排错类）、话术模板（沟通场景类）、产品文档（功能/定价/政策类）。选用对应结构化模板，准备编写环境。检索现有知识库确认不存在重复或可扩展的类似内容。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-authoring-assistant",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库检索系统"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "内容编写与素材转化",
+      "type": "agent",
+      "prompt": "根据选定的模板结构和收集的素材（产品文档、对话记录、工单方案等），执行内容编写。将非结构化素材转化为标准知识库格式：提取核心信息、去除冗余、语言规范化（口语→书面语、技术术语→通俗表达）、按模板章节组织。确保内容面向一线坐席可直接使用。标注需要业务专家确认的部分。补全所有必填元数据：适用产品、适用场景、有效期、责任人。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-authoring-assistant",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库编辑系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "自动质量预检",
+      "type": "agent",
+      "prompt": "对编写完成的文章执行全面质量预检：1)格式规范性——模板结构完整、排版正确、长度合规；2)术语一致性——对照标准术语表扫描非标用语；3)信息完整性——元数据四要素齐全、内容逻辑完整；4)可读性——句子长度、术语密度、逻辑清晰度。生成检查报告，标注通过项和不通过项，对不通过项给出具体修改建议。判定提交建议：全部通过可提交、存在小问题建议修改后提交、存在关键问题必须修改。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-authoring-assistant",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "术语标准库"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "判断质量预检是否通过",
+      "type": "agent",
+      "prompt": "根据质量预检报告判断：如果所有检查项通过或仅有非关键性小问题，判定为通过，进入审核提交流程；如果存在关键问题（元数据缺失、结构不完整、事实性错误嫌疑），判定为不通过，需要返回修改。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-authoring-assistant",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "审核人匹配与任务分配",
+      "type": "agent",
+      "prompt": "根据文章所属产品线和业务领域，从审核人池中匹配最合适的SME。考虑因素：专业匹配度（该产品线的领域专家）、当前工作负载（避免单人积压过多）、回避原则（不可审核自己编写的内容）。生成审核任务通知，包含：文章链接、审核检查清单（准确性、完整性、可操作性、格式规范性）、截止时间（常规2工作日）。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "content-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "人员管理系统",
+          "任务分配系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "判断审核结果",
+      "type": "agent",
+      "prompt": "接收专家审核结论，判定处理路径：1)审核通过→进入发布流程；2)小修（格式/表述微调）→编写者修改后免复审直接发布；3)打回（内容逻辑/准确性问题）→需修改后复审。如果是第2轮以上打回，检查是否超过最大2轮限制，超过则升级至知识库负责人介入。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "content-lifecycle-manager",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "内容发布与索引同步",
+      "type": "agent",
+      "prompt": "审核通过后执行发布流程：1)将文章状态变更为'已发布'，设置有效期起止时间；2)触发搜索索引更新，确保新内容可被检索；3)更新关联推荐关系；4)生成版本记录（版本号、发布时间、审核人）。确认搜索引擎已成功索引新内容（验证搜索可命中）。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "content-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库发布系统",
+          "搜索引擎"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "AI训练数据同步",
+      "type": "agent",
+      "prompt": "知识内容发布后24小时内完成AI系统数据同步。将审核通过的正式内容推送至AI训练数据集，触发AI模型的知识更新。确认AI系统已成功加载新内容。对于FAQ类内容，验证AI能正确匹配并回答相关问题。记录同步时间戳和确认状态。如同步失败，自动重试3次后升级至技术团队。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "content-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "AI客服训练系统",
+          "AI模型管理平台"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "使用效果数据分析",
+      "type": "agent",
+      "prompt": "持续采集和分析知识库使用数据：搜索行为（关键词、命中率、点击率）、文章效果（PV/UV、解决率、停留时间、跳出率）、反馈信号（点赞/点踩、'未解决'标记）、AI调用效果（命中率、采纳率、接管率）。计算核心指标并与基线对比。识别异常模式：高访问低解决的文章、搜索无结果突增的关键词、AI准确率下降的内容领域。按优先级输出优化建议清单。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-quality-optimizer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "数据分析平台",
+          "搜索引擎日志",
+          "AI效果监控系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "搜索检索优化执行",
+      "type": "agent",
+      "prompt": "基于使用数据分析的诊断结果，执行搜索优化：1)从搜索日志中提取新出现的高频搜索词，补充同义词映射（口语→书面语、缩写→全称、品牌→通用）；2)对命中失败但内容存在的情况，分析表达差异并添加同义词或调整标签；3)清理低频无效标签，合并近义标签；4)优化搜索排序因子权重。执行回归测试确认优化不影响已有效果。一周后验证命中率变化。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-quality-optimizer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "搜索引擎配置",
+          "同义词管理系统"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "AI准确率监控与偏差处理",
+      "type": "agent",
+      "prompt": "实时监控AI基于知识库回答的准确率。对预警事件（单篇文章相关准确率<90%、某类型问题接管率突增>10%、连续3次被坐席否定）执行逐案归因分析：对比AI回答原文与知识库源文，判定偏差类型（内容偏差/理解偏差/匹配偏差/缺失偏差）。知识内容问题推送修正工单给内容编写流程；AI理解问题生成调优工单给AI团队；匹配问题推送给搜索优化流程。修正后3天内验证效果。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-quality-optimizer",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "AI效果监控系统",
+          "工单管理系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "季度全面审查执行",
+      "type": "agent",
+      "prompt": "每季度第1个月启动全量知识库审查。生成待审查文章清单（全量），按产品线分批分配给对应SME（分4周完成，避免集中负担）。审查维度：准确性（与当前业务一致）、时效性（信息未过时）、完整性（无缺失环节）、可用性（仍有使用价值）。汇总审查结论：确认有效→续期、需修订→创建修订工单进入编写流程、建议归档→执行归档（7天异议期）。输出季度审查报告：覆盖率、处理结果分布、分类优化建议。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "content-lifecycle-manager",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库管理系统",
+          "任务分配系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "知识库健康度报告生成",
+      "type": "document",
+      "prompt": "综合所有监控数据生成知识库健康度报告。报告内容包括：1)核心指标仪表板（覆盖率、命中率、解决率、AI准确率、过期占比）及趋势；2)本期TOP问题和处理进展；3)内容生产效率指标（新增/修订量、审核通过率、平均编写周期）；4)搜索优化效果（命中率变化、同义词新增数）；5)AI协同效果（同步及时率、准确率变化）；6)下期重点工作建议。报告频率：周度简报+月度详报。",
+      "dependentTasks": [
+        "task-13",
+        "task-14",
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "knowledge-quality-optimizer",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "报告生成系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-3",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-12",
+      "target": "task-15"
+    },
+    {
+      "source": "task-13",
+      "target": "task-17"
+    },
+    {
+      "source": "task-14",
+      "target": "task-17"
+    },
+    {
+      "source": "task-15",
+      "target": "task-17"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "contentRequirementSource",
+      "value": "",
+      "description": "内容需求来源类型（新产品上线/投诉根因/搜索缺失/定期审查/政策变更）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "contentPriority",
+      "value": "",
+      "description": "内容需求优先级（P0/P1/P2/P3）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "contentType",
+      "value": "",
+      "description": "知识内容类型（FAQ/操作指南/故障排查手册/话术模板/产品文档）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "articleId",
+      "value": "",
+      "description": "知识库文章唯一标识ID",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "reviewResult",
+      "value": "",
+      "description": "审核结果（通过/小修/打回）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "searchHitRate",
+      "value": "",
+      "description": "当前搜索命中率百分比，目标>=90",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-7",
+      "name": "aiAccuracyRate",
+      "value": "",
+      "description": "AI回答准确率百分比，目标>=95",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-8",
+      "name": "isEmergency",
+      "value": "",
+      "description": "是否为紧急发布场景",
+      "required": true,
+      "variableType": "boolean"
+    },
+    {
+      "variableId": "var-9",
+      "name": "assignedReviewer",
+      "value": "",
+      "description": "分配的审核人（SME）标识",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-10",
+      "name": "articleValidityPeriod",
+      "value": "",
+      "description": "文章有效期（根据内容类型自动设定）",
+      "required": true,
+      "variableType": "string"
+    }
+  ]
+}

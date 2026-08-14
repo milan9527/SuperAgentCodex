@@ -1,0 +1,629 @@
+{
+  "title": "故障响应全生命周期工作流",
+  "description": "覆盖从告警触发、分诊定级、应急响应、根因分析、恢复执行到复盘闭环的完整故障响应流程。支持P0-P3四个等级的差异化处理路径，包含自动升级机制和异常分支处理。",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "告警接收与聚合降噪",
+      "type": "agent",
+      "prompt": "从Prometheus、Zabbix、云监控、APM等多源告警通道实时接收原始告警。执行以下处理：1）将告警标准化为统一格式（source, timestamp, severity, host, service, metric, value, threshold）；2）使用5分钟滑动窗口进行时间聚合；3）基于服务拓扑图分析告警间的上下游关系，识别级联告警；4）检测告警风暴（5分钟内>50条同类告警）；5）过滤已知噪声源和重复告警。输出聚合后的故障事件列表，每个事件包含根源告警、关联告警数量、受影响服务列表。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "alert-triage-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "prometheus",
+          "zabbix",
+          "cloud-monitoring",
+          "apm",
+          "cmdb"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "故障定级评估",
+      "type": "agent",
+      "prompt": "对聚合后的故障事件执行定级评估。评估维度包括：1）用户影响面（全量/>10%/<10%/个别用户）；2）功能影响（核心交易/核心功能/非核心/辅助）；3）数据安全影响（丢失/不一致/无影响）；4）舆情风险。根据定级矩阵匹配P0-P3等级，并应用加权因子（业务高峰期升一级、问题快速恶化升一级）。输出定级结果、定级依据、置信度评估、以及对应等级的SLA要求（响应时间、恢复时间、通报频率）。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "alert-triage-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "business-metrics",
+          "user-analytics"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "定级路由决策",
+      "type": "agent",
+      "prompt": "根据故障定级结果决定后续处理路径。判断条件：如果定级为P0或P1，进入应急响应流程（创建War Room、启动应急团队）；如果定级为P2，通知OnCall工程师在线处理，不启动War Room；如果定级为P3，创建工单进入常规处理队列。输出路由决策和对应的处理路径。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "alert-triage-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "告警路由通知",
+      "type": "agent",
+      "prompt": "根据定级结果和路由决策，将故障信息分发给对应的响应人员。具体操作：1）查询当前OnCall排班表确定值班人员；2）根据等级选择通知渠道（P0：电话+短信+IM；P1：电话+IM；P2：IM；P3：工单）；3）构建通知内容（包含故障等级、摘要、影响面、期望动作、确认链接）；4）发送通知并启动确认计时器（P0：5分钟；P1：15分钟）；5）未确认则自动升级至L2。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "alert-triage-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "oncall-schedule",
+          "notification-service",
+          "im-platform"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "创建War Room并拉通团队",
+      "type": "agent",
+      "prompt": "P0/P1故障确认后立即启动应急响应。操作步骤：1）在IM平台创建War Room群组（命名规范：[P0/P1] 故障简述 - YYYYMMDD-HHmm）；2）拉入必要参与方：故障指挥官、受影响服务OnCall、领域专家（DBA/网络/安全根据故障类型选择）、业务TL；3）发布群公告（故障摘要、当前状态、指挥官、各角色分工）；4）关联故障工单和监控大盘链接；5）建立协作规范（进展同步格式、信息前缀约定）。确保5分钟内War Room上线。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "incident-commander-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "im-platform",
+          "incident-management",
+          "monitoring-dashboard"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "分配排查任务",
+      "type": "agent",
+      "prompt": "在War Room中分配具体的排查任务。根据故障类型和初步线索确定排查方向：1）变更回溯方向（检查24h内所有变更）→分配给根因分析Agent；2）链路追踪方向（分析异常Trace）→分配给根因分析Agent；3）日志分析方向（检索ERROR日志）→分配给根因分析Agent；4）指标比对方向（分析指标异常时间点）→分配给OnCall工程师。明确每个方向的负责人和10分钟初步结论的时间约束。建立每10分钟在群内同步进展的机制。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "incident-commander-agent",
+        "originalType": "agent",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "变更回溯分析",
+      "type": "agent",
+      "prompt": "执行变更关联分析，这是根因定位的第一优先级方向。操作：1）检索故障前24小时内所有变更记录（代码发布、配置变更、数据库变更、基础设施变更）；2）按时间倒序排列，重点关注故障前2小时内的变更；3）分析时间相关性（变更完成→故障首次告警的时间差）；4）分析影响面匹配度（变更服务 vs 故障服务的依赖关系）；5）对高可疑变更深入分析变更内容（代码diff/配置对比）。输出关联度评估和回滚建议。10分钟内完成初步结论。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "rca-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "change-management-system",
+          "ci-cd-platform",
+          "config-center"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "分布式链路追踪分析",
+      "type": "agent",
+      "prompt": "执行调用链路分析定位异常节点。操作：1）从APM系统采集故障时间窗口内的异常Trace（错误/慢/超时），采样20-50条；2）分析调用链拓扑，标注每个节点的耗时和状态；3）识别异常节点（耗时突增/错误返回/超时）和故障传播路径；4）对比同时段正常Trace，识别差异点；5）区分根源故障节点和被影响的上游节点。输出故障根源节点定位、传播路径和异常统计。10分钟内完成初步结论。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "rca-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "apm",
+          "jaeger",
+          "skywalking"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "日志模式分析",
+      "type": "agent",
+      "prompt": "执行日志分析定位错误根源。操作：1）检索受影响服务故障前30分钟到当前的ERROR/FATAL日志；2）对错误日志进行聚类分析，识别错误模式（新增错误类型特别重要）；3）分析关键错误的堆栈信息，定位具体代码位置；4）确定错误首次出现时间，绘制错误频率时间线；5）通过RequestID/TraceID关联跨服务日志，构建完整错误链路。输出错误模式列表、代码定位和首次出现时间。10分钟内完成初步结论。",
+      "dependentTasks": [
+        "task-6"
+      ],
+      "metadata": {
+        "agentRef": "rca-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "elasticsearch",
+          "loki",
+          "log-service"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "根因综合研判",
+      "type": "agent",
+      "prompt": "汇总变更回溯、链路追踪、日志分析的结论，综合研判根因。判断条件：1）如果已有高置信度的根因结论（某个排查方向给出明确证据）→进入恢复方案推荐；2）如果所有方向均未给出确定结论但有可疑方向→针对可疑方向深入排查（追加5分钟）；3）如果排查超过20分钟仍无方向→触发升级机制引入L2/L3专家。同时评估是否需要先采取止血措施（降级/限流）以减少业务损失。",
+      "dependentTasks": [
+        "task-7",
+        "task-8",
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "rca-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "恢复方案推荐",
+      "type": "agent",
+      "prompt": "基于根因分析结论，生成可执行的恢复方案建议。操作：1）根据根因类型确定对应恢复策略族（代码缺陷→回滚；配置错误→配置回滚；容量不足→扩容；依赖故障→切流/降级）；2）评估各方案的前置条件（如回滚版本是否可用、备用节点是否就绪）；3）评估风险和预计恢复时间；4）生成方案对比矩阵（恢复时间/风险/业务影响/推荐度）；5）明确推荐方案和备选方案及切换条件。输出结构化的方案建议供故障指挥官决策。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "rca-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "change-management-system",
+          "infrastructure-platform"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "恢复决策与执行监控",
+      "type": "agent",
+      "prompt": "协调恢复决策和执行过程。操作：1）审核根因分析Agent推荐的恢复方案；2）P0方案需确认审批（故障指挥官有权审批，如涉及全站切流需VP确认）；3）通知执行团队开始恢复操作；4）实时监控恢复过程中的核心指标变化；5）验证恢复结果（核心指标回归基线±10%）；6）恢复后持续观察15分钟确认稳定。如果恢复失败，5分钟内启动备选方案。如果所有方案失败，立即升级至VP/CTO。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "incident-commander-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "monitoring-dashboard",
+          "deployment-platform"
+        ]
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "恢复验证与故障关闭",
+      "type": "agent",
+      "prompt": "验证服务是否真正恢复并决定是否关闭故障。验证标准：1）核心业务指标（成功率、响应时间、吞吐量）回归到故障前基线±10%范围内；2）错误率降至正常水平；3）无新增告警触发；4）15分钟稳定观察期内无波动。如果验证通过→宣布故障恢复，发送最终通报，标记工单为已恢复，触发复盘流程。如果验证未通过（10分钟内复发）→重新进入排查流程，不关闭故障。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "incident-commander-agent",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "monitoring-dashboard",
+          "incident-management"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "发送进展通报",
+      "type": "agent",
+      "prompt": "按照规定频率向管理层和利益相关方同步故障进展。操作：1）P0每30分钟、P1每60分钟发送定时通报；2）关键状态变更时即时发送通报（发现根因/开始恢复/恢复成功）；3）管理层通报使用简洁格式（状态/影响/进展/预计/下次通报时间）；4）技术团队通报包含详细排查信息；5）最终通报包含恢复确认、影响摘要和后续安排。确保通报间隔不超过约定频率，内容有实质性进展更新。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "incident-commander-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "im-platform",
+          "email-service"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "升级决策处理",
+      "type": "agent",
+      "prompt": "监控升级触发条件并执行升级。触发条件：1）OnCall超时未响应（P0>5min/P1>15min）→升级至L2；2）排查超20分钟无方向→升级引入L2/L3专家；3）P0恢复超30分钟→通报总监；4）P0恢复超2小时→通报VP/CTO；5）恢复方案全部失败→升级至L3+VP联合决策。执行升级：准备升级材料（时间线摘要/当前困境/已尝试方案/需要的支持）→通知被升级者（电话+IM）→邀请加入War Room→更新时间线。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "incident-commander-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "notification-service",
+          "oncall-schedule"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "时间线重建与整理",
+      "type": "agent",
+      "prompt": "故障恢复后，整合多源数据重建完整的故障时间线。操作：1）采集告警系统的触发/确认/恢复时间记录；2）采集War Room聊天记录中的关键发言和决策；3）采集操作审计日志中的排查和恢复操作；4）采集通报记录和监控系统指标异常时间点；5）统一为标准格式（时间/事件类型/描述/操作人）按时序排列；6）划分阶段（检测/响应/排查/恢复/验证）并计算各阶段耗时；7）标注关键里程碑和SLA达成情况。24小时内完成初稿。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "postmortem-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "incident-management",
+          "im-platform",
+          "audit-log"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "影响面量化分析",
+      "type": "agent",
+      "prompt": "量化故障的业务影响。操作：1）确定影响时间窗口（业务指标首次异常→完全恢复正常）；2）统计直接受影响用户数和影响比例；3）统计失败交易数和估算GMV损失（失败订单数×平均客单价）；4）评估SLA消耗情况（本月可用性预算消耗）；5）分维度统计（按地域/时段/功能模块细分）；6）标注数据来源和计算方法，不确定的数据标记'待精确确认'。输出结构化的影响面量化报告。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "postmortem-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "business-metrics",
+          "user-analytics",
+          "order-system"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "5-Why根因深度分析",
+      "type": "agent",
+      "prompt": "运用5-Why方法论进行深度根因追溯。操作：1）从技术直接原因出发（由根因分析阶段确认的根因）；2）逐层追问'为什么'，至少分析3条因果链——为什么发生（预防失效链）、为什么没提前发现（检测失效链）、为什么恢复这么慢/快（恢复效率链）；3）每条链路至少追溯3层，推荐5层；4）每层必须附带证据支撑，不接受无根据猜测；5）最终根因需穿透技术层面触达流程/机制/能力层面；6）遵循Blameless原则，分析系统和流程而非追究个人。输出5-Why分析树和系统性改进方向。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "postmortem-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "knowledge-base"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "制定改进措施Action",
+      "type": "agent",
+      "prompt": "基于5-Why分析结论制定具体的改进措施。操作：1）对应5-Why各层级的根因制定改进措施；2）分类为短期止血（1周内完成）、中期加固（1月内完成）、长期预防（1季度内完成）；3）每个Action必须符合SMART原则——具体明确（不接受'加强监控'等模糊表述）、有明确Owner、有Deadline、有验收标准；4）控制Action总数在5-8个（太多无法有效跟踪）；5）与相关Team Lead确认Owner和Deadline的合理性。输出Action列表并开启跟踪。",
+      "dependentTasks": [
+        "task-18"
+      ],
+      "metadata": {
+        "agentRef": "postmortem-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "task-management",
+          "incident-management"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-20",
+      "title": "生成复盘报告并发布",
+      "type": "document",
+      "prompt": "组装完整的复盘报告并发布。报告结构：1）故障概述（What/When/Impact一段话描述）；2）故障等级和定级依据；3）完整时间线（表格形式，精确到分钟）；4）影响面量化数据（用户数/交易数/金额/SLA消耗）；5）5-Why根因分析（树状结构展开）；6）恢复过程描述；7）响应评估（SLA达成/流程合规性/效率评分）；8）改进措施列表（编号/描述/类型/Owner/Deadline/优先级）；9）故障模式标签。48小时内完成报告，发布至故障知识库，提取故障模式供未来参考。",
+      "dependentTasks": [
+        "task-17",
+        "task-18",
+        "task-19"
+      ],
+      "metadata": {
+        "agentRef": "postmortem-agent",
+        "originalType": "document",
+        "requiredIntegrations": [
+          "knowledge-base",
+          "document-management"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-21",
+      "title": "改进Action跟踪闭环",
+      "type": "agent",
+      "prompt": "持续跟踪改进Action的执行进度直至全部闭环。操作：1）将Action分配通知发送给各Owner，要求24小时内确认；2）按频率跟进进度（P0 Action每日/P1 Action每周/P2 Action每两周）；3）Deadline前3天自动提醒；4）逾期处理：1天→提醒+CC上级，3天→升级至部门负责人，7天→升级至VP；5）Action标记完成后执行验证（实施内容一致性、有效性验证）；6）所有Action闭环后输出完成率统计。目标完成率≥90%。",
+      "dependentTasks": [
+        "task-20"
+      ],
+      "metadata": {
+        "agentRef": "postmortem-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "task-management",
+          "notification-service"
+        ]
+      },
+      "position": {
+        "x": 4300,
+        "y": 100
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-3",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-6",
+      "target": "task-7"
+    },
+    {
+      "source": "task-6",
+      "target": "task-8"
+    },
+    {
+      "source": "task-6",
+      "target": "task-9"
+    },
+    {
+      "source": "task-7",
+      "target": "task-10"
+    },
+    {
+      "source": "task-8",
+      "target": "task-10"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-5",
+      "target": "task-14"
+    },
+    {
+      "source": "task-5",
+      "target": "task-15"
+    },
+    {
+      "source": "task-13",
+      "target": "task-16"
+    },
+    {
+      "source": "task-13",
+      "target": "task-17"
+    },
+    {
+      "source": "task-16",
+      "target": "task-18"
+    },
+    {
+      "source": "task-18",
+      "target": "task-19"
+    },
+    {
+      "source": "task-17",
+      "target": "task-20"
+    },
+    {
+      "source": "task-18",
+      "target": "task-20"
+    },
+    {
+      "source": "task-19",
+      "target": "task-20"
+    },
+    {
+      "source": "task-20",
+      "target": "task-21"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "alertSource",
+      "value": "",
+      "description": "告警来源系统标识（prometheus/zabbix/cloudwatch/custom）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "incidentSeverity",
+      "value": "",
+      "description": "故障定级结果（P0/P1/P2/P3）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "affectedServices",
+      "value": "",
+      "description": "受影响的服务列表，逗号分隔",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "oncallEngineer",
+      "value": "",
+      "description": "当前OnCall值班工程师姓名",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "warRoomLink",
+      "value": "",
+      "description": "War Room群组链接",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "rootCause",
+      "value": "",
+      "description": "确认的故障根因描述",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "recoveryStrategy",
+      "value": "",
+      "description": "选定的恢复策略（rollback/scale_out/failover/degradation/hotfix）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "incidentDurationMinutes",
+      "value": "",
+      "description": "故障持续时间（分钟），从首次告警到恢复确认",
+      "required": false,
+      "variableType": "number"
+    },
+    {
+      "variableId": "var-9",
+      "name": "businessImpact",
+      "value": "",
+      "description": "业务影响量化摘要（影响用户数/损失金额）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-10",
+      "name": "postmortemDeadline",
+      "value": "",
+      "description": "复盘报告截止时间（故障恢复后48小时）",
+      "required": false,
+      "variableType": "string"
+    }
+  ]
+}

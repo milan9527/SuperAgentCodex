@@ -1,0 +1,561 @@
+{
+  "title": "变更管理全流程工作流",
+  "description": "覆盖变更从申请提交到验证关闭的完整生命周期，包括评估、审批、执行、回滚和分析改进环节",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "变更申请接收与信息验证",
+      "type": "action",
+      "prompt": "接收变更申请，验证变更工单的必填字段完整性（变更内容、变更类型、影响范围、执行计划、回滚方案）。完整性必须达到95%以上。如果信息不完整，明确列出缺失字段并退回申请人补充。验证通过后将工单状态设置为'待评估'并流转至影响面分析环节。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "change-assessment-agent",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "ITSM工单系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "变更影响面分析",
+      "type": "agent",
+      "prompt": "对变更申请执行全面的影响面分析：1)查询CMDB中变更对象的服务拓扑和调用链，识别直接影响和间接影响（追溯3层）；2)量化影响的用户数和交易量；3)检查与同时段其他变更的冲突；4)标记是否影响核心交易链路。分析必须在10分钟内完成。输出结构化的影响面评估报告。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "change-assessment-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CMDB",
+          "APM调用链",
+          "监控系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "变更风险评分与等级判定",
+      "type": "agent",
+      "prompt": "基于影响面分析结果，执行多维度风险评分计算：综合变更类型权重(25%)、影响范围系数(30%)、执行时间风险(15%)、团队历史成功率(15%)、回滚复杂度(15%)进行加权计算。应用附加规则（核心交易链路×1.3、不可逆操作×1.5）。输出风险总分和风险等级判定（标准/普通/高风险/极高风险），以及审批流程建议。对边界值（±5分）的判定标记需要人工确认。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "change-assessment-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "变更历史数据库"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "回滚方案审核",
+      "type": "agent",
+      "prompt": "审核变更申请中的回滚方案，检查8项必备内容的完整性（回滚触发条件、决策人、步骤、顺序、验证方法、预估时间、数据兼容性、应急方案）。验证回滚的可行性（脚本/工具就绪、目标版本可获取、权限准备）。确认回滚时间预估≤变更执行时间的50%。不完整或不可行的回滚方案必须退回修改，明确指出缺失项和问题。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "change-assessment-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "制品库",
+          "配置中心"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "判断是否为紧急变更",
+      "type": "agent",
+      "prompt": "判断当前变更是否为紧急变更。紧急变更的判定条件：1)关联活跃故障工单（P0/P1级故障的修复）；2)高危安全漏洞的紧急修复（CVSS≥9.0且已被利用）；3)监管要求的紧急合规整改。仅满足以上条件之一才可判定为紧急变更，业务紧急需求不构成紧急变更理由。输出判定结果和依据。",
+      "dependentTasks": [
+        "task-3",
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "change-approval-agent",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "故障工单系统",
+          "安全漏洞平台"
+        ]
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "紧急变更快速放行",
+      "type": "agent",
+      "prompt": "执行紧急变更放行流程：1)确认值班经理已验证紧急性并授权放行；2)记录放行人身份、放行原因和关联事件编号；3)自动创建24小时补审工单并设置到期提醒；4)通知变更执行Agent可以开始执行。紧急变更虽跳过常规审批但仍需执行Pre-check（可简化为核心3项：回滚就绪、监控打开、执行人就位）。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "change-approval-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "ITSM工单系统",
+          "通知系统"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "风险等级审批路由",
+      "type": "agent",
+      "prompt": "根据风险评级结果确定审批路径：1)标准变更（风险分≤25）→检查是否匹配预授权目录；2)普通变更（26-60分）→路由至CAB轮值审批人；3)高风险变更（61-85分）→路由至CAB+VP审批；4)极高风险变更（>85分）→路由至CAB+VP+CTO审批。输出审批路径、审批人、时效要求。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "change-approval-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "变更日历合规检查",
+      "type": "agent",
+      "prompt": "对变更计划执行时间进行合规检查：1)检查是否为周五或节假日前一天（非紧急变更禁止）；2)高风险变更是否安排在维护窗口（周二/周四 22:00-06:00）；3)检查同一窗口内并行高风险变更是否≤2个；4)检查是否处于变更冻结期（大促前7天至大促后3天）；5)检查与同时段其他变更的资源冲突。不合规的变更输出驳回建议和最近可用时间窗口。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "change-approval-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "变更日历",
+          "节假日配置"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "执行审批流程",
+      "type": "agent",
+      "prompt": "驱动审批流程执行：1)标准变更-匹配预授权目录后自动通过，记录匹配条目；2)CAB审批-通知轮值审批人，提供变更摘要和评估报告，设置24小时审批时效和超时升级机制；3)VP审批-CAB通过后转VP，设置48小时时效。审批期间在50%时效时发送提醒，100%时效时自动升级。记录审批意见和审批时间戳。通过后通知执行团队并将变更排入执行日历。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "change-approval-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "审批系统",
+          "通知系统",
+          "变更日历"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "变更Pre-check执行",
+      "type": "agent",
+      "prompt": "在变更执行开始前，逐项执行8项必检清单：1)审批状态-确认在有效期内；2)回滚方案-验证脚本可用、目标版本可获取；3)监控大盘-确认核心大盘已打开并显示正常；4)相关方通知-确认上下游团队/业务方/客服已知晓；5)人员就位-确认执行人和复核人在线；6)依赖服务-确认上下游健康检查通过；7)资源余量-确认CPU/内存/磁盘满足需求；8)脚本工具-确认制品SHA校验通过、配置正确。任何一项未通过必须阻断执行并明确反馈缺失项。Pre-check结果有效期30分钟。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "change-execution-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "监控系统",
+          "健康检查API",
+          "制品库",
+          "通知系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "Pre-check结果判定",
+      "type": "agent",
+      "prompt": "判断Pre-check 8项检查是否全部通过。全部通过则允许开始变更执行。任何一项未通过则阻断执行，输出未通过项目清单和建议解决方案，通知执行团队处理后重新执行Pre-check。如果Pre-check多次失败（≥3次），建议评估是否需要改期。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "change-execution-agent",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "灰度发布执行与监控",
+      "type": "agent",
+      "prompt": "执行变更的灰度发布策略：1)采集变更前基线指标（错误率、P50/P95/P99响应时间、QPS、CPU/内存使用率）；2)按批次执行放量（1%→10%→50%→100%，至少3批）；3)每批次放量后执行即时健康检查（30秒）、短期观察（1-5分钟）、稳定验证（5-15分钟）；4)5秒粒度监控核心指标与基线的偏离度；5)每批次通过条件：错误率增幅<2×基线、P99响应时间<3×基线、成功率下降<1%。实时输出各批次的指标对比报告。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "change-execution-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "发布系统",
+          "监控系统",
+          "APM"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "灰度指标异常判定",
+      "type": "agent",
+      "prompt": "在灰度发布过程中实时判定指标是否异常：1)正常（偏离基线<20%）→继续当前批次观察或放量至下一批次；2)警告（偏离20-30%）→暂停放量，延长观察至15分钟，观察趋势；3)严重异常（偏离>30%或核心功能不可用）→立即暂停，启动回滚决策。输出异常判定结果、触发的具体指标和偏离度。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "change-execution-agent",
+        "originalType": "condition",
+        "requiredIntegrations": [
+          "监控系统"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "回滚决策与执行",
+      "type": "agent",
+      "prompt": "在检测到严重指标异常后，5分钟内完成回滚决策和执行：1)确认异常与变更的因果关系；2)决策框架-核心交易影响/数据异常/安全问题→立即回滚；非核心影响/趋势不确定→暂停观察；3)回滚执行-通知相关方→按回滚方案逐步操作→实时监控回滚过程；4)回滚时间控制在变更执行时间的50%以内；5)回滚验证-确认指标恢复基线(±10%)、功能正常、数据一致；6)回滚失败则立即升级L3专家并触发故障响应流程。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "change-execution-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "发布系统",
+          "监控系统",
+          "故障响应系统"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "Post-check验证",
+      "type": "agent",
+      "prompt": "变更全量完成后执行5项Post-check验证：1)核心功能可用性-调用关键接口确认返回正确；2)性能指标正常-响应时间/错误率在基线±10%范围内；3)错误日志检查-无新增异常ERROR模式（对比变更前日志模式）；4)关联服务检查-确认上下游服务无级联影响；5)变更目标达成-确认变更预期效果已实现。所有验证通过则标记变更成功，否则评估是否需要回滚或创建后续修复工单。",
+      "dependentTasks": [
+        "task-13"
+      ],
+      "metadata": {
+        "agentRef": "change-execution-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "监控系统",
+          "日志系统",
+          "APM"
+        ]
+      },
+      "position": {
+        "x": 3400,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "变更关闭与数据记录",
+      "type": "action",
+      "prompt": "变更验证通过后执行关闭操作：1)将变更工单状态设为'已完成'；2)记录变更执行的完整时间线（各步骤起止时间）；3)记录最终状态（成功/回滚/部分完成）；4)记录实际影响面数据（用于评估模型校准）；5)记录执行过程中的问题和经验（如有）；6)释放变更日历占位。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "change-execution-agent",
+        "originalType": "action",
+        "requiredIntegrations": [
+          "ITSM工单系统",
+          "变更日历"
+        ]
+      },
+      "position": {
+        "x": 3700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "紧急变更补审",
+      "type": "agent",
+      "prompt": "对已执行完成的紧急变更，在24小时内完成补审流程：1)收集紧急变更的执行记录、影响报告和结果；2)验证紧急性的合理性（是否确实必须紧急执行）；3)CAB进行事后审批（确认操作合规性、回顾是否有改进空间）；4)评估该类紧急变更是否可通过提前计划避免；5)记录补审结果。超时未完成补审的工单自动升级至运维总监。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "change-approval-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "ITSM工单系统",
+          "审批系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-18",
+      "title": "变更管理健康度分析",
+      "type": "agent",
+      "prompt": "定期（月度）执行变更管理核心指标的统计分析：1)计算8项核心KPI（变更成功率、故障关联比例、审批时长、紧急变更占比、回滚成功率、窗口利用率、Pre-check执行率、标准变更覆盖率）；2)计算各指标的环比/同比变化趋势；3)识别未达标指标并分析根因；4)多维交叉分析（按团队/类型/时段的成功率差异）；5)识别高风险变更模式（特定组合的失败率偏高）；6)评估标准变更预授权目录的覆盖率和准确性。输出月度健康度报告和改进建议。",
+      "dependentTasks": [
+        "task-16"
+      ],
+      "metadata": {
+        "agentRef": "change-analytics-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "变更历史数据库",
+          "故障工单系统"
+        ]
+      },
+      "position": {
+        "x": 4000,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-19",
+      "title": "持续改进建议与预授权目录更新",
+      "type": "agent",
+      "prompt": "基于健康度分析结果，输出具体的改进建议：1)对未达标指标提出针对性改进方案（含预期效果、实施成本、优先级）；2)识别可纳入标准变更预授权目录的候选项（历史成功率≥99.9%、连续成功≥20次的变更类型）；3)识别应从预授权目录移出的条目（出现失败、环境变化）；4)评估风险评估模型的准确性并提出校准建议；5)跟踪上月改进Action的落地进度。所有建议必须有数据支撑和具体的实施方案。",
+      "dependentTasks": [
+        "task-18"
+      ],
+      "metadata": {
+        "agentRef": "change-analytics-agent",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "变更历史数据库"
+        ]
+      },
+      "position": {
+        "x": 4300,
+        "y": 100
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-1",
+      "target": "task-4"
+    },
+    {
+      "source": "task-3",
+      "target": "task-5"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-5",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-8",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-13",
+      "target": "task-14"
+    },
+    {
+      "source": "task-13",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-16",
+      "target": "task-17"
+    },
+    {
+      "source": "task-16",
+      "target": "task-18"
+    },
+    {
+      "source": "task-18",
+      "target": "task-19"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "changeRequest",
+      "value": "",
+      "description": "变更申请信息，包含变更内容、类型、影响范围、执行计划、回滚方案等",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-2",
+      "name": "riskLevel",
+      "value": "",
+      "description": "风险等级判定结果：standard(标准)/normal(普通)/high(高风险)/critical(极高风险)",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "isEmergency",
+      "value": "",
+      "description": "是否为紧急变更",
+      "required": true,
+      "variableType": "boolean"
+    },
+    {
+      "variableId": "var-4",
+      "name": "impactAssessment",
+      "value": "",
+      "description": "影响面评估结果，包含影响服务列表、用户量、交易量、SLA影响等",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-5",
+      "name": "approvalStatus",
+      "value": "",
+      "description": "审批状态：pending(待审批)/approved(已通过)/rejected(已驳回)/expired(已过期)",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "preCheckResult",
+      "value": "",
+      "description": "Pre-check 8项检查的逐项结果",
+      "required": true,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-7",
+      "name": "canaryMetrics",
+      "value": "",
+      "description": "灰度发布过程中的实时监控指标数据",
+      "required": false,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-8",
+      "name": "rollbackDecision",
+      "value": "",
+      "description": "回滚决策信息，包含触发原因、决策结果、执行状态",
+      "required": false,
+      "variableType": "object"
+    },
+    {
+      "variableId": "var-9",
+      "name": "changeResult",
+      "value": "",
+      "description": "变更最终结果：success(成功)/rolled_back(已回滚)/partial(部分完成)/failed(失败)",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-10",
+      "name": "executionTimeline",
+      "value": "",
+      "description": "变更执行完整时间线，记录各步骤的起止时间",
+      "required": true,
+      "variableType": "object"
+    }
+  ]
+}

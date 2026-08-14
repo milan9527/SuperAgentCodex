@@ -1,0 +1,504 @@
+{
+  "title": "工单全生命周期处理流程",
+  "description": "覆盖客户请求从全渠道接入、智能分类路由、AI自动应答/人工处理、SLA监控升级到满意度回访的端到端工单处理流程",
+  "nodes": [
+    {
+      "id": "task-1",
+      "title": "全渠道请求接入与客户识别",
+      "type": "agent",
+      "prompt": "监听所有接入渠道（电话、在线聊天、邮件、微信/企微、APP、社交媒体）的客户请求。收到请求后立即创建工单记录，生成唯一工单号，记录接入时间戳和渠道信息。通过手机号/账号/微信OpenID识别客户身份，调取客户画像（VIP等级、CLV值、历史工单记录、产品订购情况）。将客户请求内容和客户画像信息打包输出，作为后续分类和路由的输入。",
+      "dependentTasks": [],
+      "metadata": {
+        "agentRef": "channel-router",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "CRM系统",
+          "全渠道接入平台",
+          "客户画像系统"
+        ]
+      },
+      "position": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-2",
+      "title": "意图识别与智能分类",
+      "type": "agent",
+      "prompt": "对客户请求内容进行NLP分析，执行意图识别和问题分类。输出一级分类（咨询/问题/变更/投诉四类之一）和二级意图标签。同时检测客户情绪状态（正面/中性/负面/愤怒）。评估分类置信度：>=0.85确认分类，0.6-0.85标注低置信度建议复核，<0.6标记待人工确认。提取关键实体信息（产品名、订单号、金额等）。",
+      "dependentTasks": [
+        "task-1"
+      ],
+      "metadata": {
+        "agentRef": "channel-router",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "NLP服务",
+          "知识库系统"
+        ]
+      },
+      "position": {
+        "x": 400,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-3",
+      "title": "优先级判定与SLA时限设定",
+      "type": "agent",
+      "prompt": "基于工单分类结果、客户画像信息和渠道特征，综合判定工单优先级P1-P4。判定规则：影响业务运行/资金安全/监管渠道=P1（30分钟响应）；核心功能受阻/VIP客户/舆情风险=P2（2小时响应）；一般功能问题/普通变更=P3（8小时响应）；咨询建议/非紧急=P4（24小时响应）。VIP客户自动提升一个优先级，重复来单（24h内第3次）自动升级。设定首次响应和最终解决两个SLA截止时间点。",
+      "dependentTasks": [
+        "task-2"
+      ],
+      "metadata": {
+        "agentRef": "channel-router",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "SLA管理系统"
+        ]
+      },
+      "position": {
+        "x": 700,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-4",
+      "title": "路由策略决策分支",
+      "type": "agent",
+      "prompt": "根据分类结果和匹配度决定路由方向：条件A-如果问题分类为投诉类（一级分类=投诉或情绪=愤怒且含投诉关键词），则推送至投诉管理流程；条件B-如果为咨询类且FAQ匹配度>=0.90且客户情绪非愤怒且非敏感操作，则进入AI自动应答流程；条件C-其他所有情况（复杂问题、低匹配度、需人工判断），进入智能路由分配给人工处理。",
+      "dependentTasks": [
+        "task-3"
+      ],
+      "metadata": {
+        "agentRef": "channel-router",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1000,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-5",
+      "title": "AI自动应答处理",
+      "type": "agent",
+      "prompt": "对FAQ匹配度>=0.90的标准咨询问题执行AI自动回复。步骤：1)二次验证FAQ匹配准确性和内容有效期；2)基于FAQ标准答案结合客户具体信息生成个性化回复；3)根据渠道调整回复格式（在线简洁/邮件正式/微信精炼）；4)执行安全校验（排除敏感操作、检查连续自动回复限制）；5)发送回复并附带解决确认引导。如果校验不通过或匹配存疑，则不自动发送，转入人工处理队列。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "channel-router",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库系统",
+          "消息推送平台"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-6",
+      "title": "AI应答结果确认分支",
+      "type": "agent",
+      "prompt": "判断AI自动应答后客户的反馈结果：条件A-客户点击确认解决或回复表示问题已解决，则自动关闭工单并进入满意度回访流程；条件B-客户选择未解决或表达仍有问题，则将工单转入人工处理，附带AI应答记录作为上下文；条件C-超过48小时客户无任何反馈，发送一次提醒后自动关闭工单。",
+      "dependentTasks": [
+        "task-5"
+      ],
+      "metadata": {
+        "agentRef": "channel-router",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 1600,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-7",
+      "title": "智能路由分配至最优坐席",
+      "type": "agent",
+      "prompt": "将需要人工处理的工单分配给最合适的坐席。执行步骤：1)分析工单所需技能标签（产品线知识、语言能力、权限等级）；2)从在线可用坐席中筛选技能匹配的候选人；3)按综合评分算法排序（技能匹配度30%+负载空闲度25%+历史服务关系20%+处理能力15%+客户等级匹配10%）；4)分配给最高分坐席；5)VIP客户优先分配VIP专属坐席组。如果所有坐席负载超80%则进入排队等待。",
+      "dependentTasks": [
+        "task-4"
+      ],
+      "metadata": {
+        "agentRef": "channel-router",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "坐席管理系统",
+          "技能矩阵数据库"
+        ]
+      },
+      "position": {
+        "x": 1300,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-8",
+      "title": "SLA监控启动与持续追踪",
+      "type": "agent",
+      "prompt": "工单分配完成后立即启动SLA监控时钟。持续追踪工单的SLA消耗进度：计算已用时间与总时限的比值。执行阈值监控：60-80%进入关注列表；80%触发黄色预警通知当前处理坐席；超过100%触发一级升级至组长；超过150%触发二级升级至主管。同时监控异常模式：工单转派超过2次判定为踢皮球风险，待客户确认超48小时触发主动跟进提醒。检测批量超时风险并评估产能状况。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "sla-escalation-monitor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "工单系统",
+          "通知系统",
+          "排班系统"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-9",
+      "title": "工单接收与知识库检索",
+      "type": "agent",
+      "prompt": "接收已分配的工单后，完整阅读工单内容、客户画像和历史记录，确认理解客户核心诉求。然后在知识库中进行多路召回检索：语义检索TOP10+关键词检索TOP10+标签过滤，合并去重后按相关性排序输出TOP3最相关文章。验证检索结果的时效性和适用条件。如果无满足条件的结果则标记为知识盲区。基于检索结果评估是否可以直接解决或需要跨部门协作。",
+      "dependentTasks": [
+        "task-7"
+      ],
+      "metadata": {
+        "agentRef": "ticket-resolver",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库系统",
+          "搜索引擎"
+        ]
+      },
+      "position": {
+        "x": 1600,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-10",
+      "title": "解决方案制定与回复生成",
+      "type": "agent",
+      "prompt": "基于知识库检索结果和客户具体情况，制定完整的解决方案。步骤：1)选择方案框架（咨询型直接回答/故障型逐步排查/变更型操作指引）；2)引用知识库内容生成核心方案，结合客户信息个性化适配；3)补充异常处理说明和预期结果描述；4)包装沟通话术（同理心开头+方案主体+确认结尾）；5)根据渠道调整格式和长度。方案完整性要求：包含操作步骤、预期结果、异常处理、后续支持承诺。",
+      "dependentTasks": [
+        "task-9"
+      ],
+      "metadata": {
+        "agentRef": "ticket-resolver",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "知识库系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-11",
+      "title": "客户沟通与解决确认",
+      "type": "agent",
+      "prompt": "将生成的解决方案通过客户接入渠道发送给客户。沟通要求：以同理心确认理解问题→清晰传达解决步骤→询问是否解决。等待客户反馈：如果客户确认解决则标记工单为已解决状态准备关单；如果客户表示未解决则分析原因（方案不适用/步骤不清楚/有新的问题），调整方案重新沟通；如果两次方案均失败则标记需升级。对需要等待的情况给出明确时间承诺。",
+      "dependentTasks": [
+        "task-10"
+      ],
+      "metadata": {
+        "agentRef": "ticket-resolver",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "消息推送平台",
+          "工单系统"
+        ]
+      },
+      "position": {
+        "x": 2200,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-12",
+      "title": "处理结果分支判定",
+      "type": "agent",
+      "prompt": "判断工单处理结果进入不同后续流程：条件A-客户确认问题已解决，工单进入关单和满意度回访流程；条件B-问题需要跨部门协作（退款审批/技术排查/物流确认等），进入跨部门协作流程；条件C-两次方案均失败或客户明确要求升级，进入SLA升级处理流程；条件D-客户48小时无响应，发送提醒后72小时仍无响应则暂挂处理。",
+      "dependentTasks": [
+        "task-11"
+      ],
+      "metadata": {
+        "agentRef": "ticket-resolver",
+        "originalType": "condition",
+        "requiredIntegrations": []
+      },
+      "position": {
+        "x": 2500,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-13",
+      "title": "跨部门协作请求与跟踪",
+      "type": "agent",
+      "prompt": "对需要跨部门支持的工单发起协作请求。步骤：1)构建标准化协作请求（问题描述+已排查内容+具体需求+影响范围+基于SLA计算的回复时限）；2)提交至目标部门（技术/财务/物流/产品）；3)同步告知客户已转交相关部门处理并给出预计时间；4)持续跟踪：4小时无响应催促，8小时无响应升级对方主管；5)收到回复后验证完整性，将专业内容翻译为客户语言整合到解决方案中。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "ticket-resolver",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "协作工单系统",
+          "内部通信平台"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-14",
+      "title": "SLA超时升级处理",
+      "type": "agent",
+      "prompt": "对触发升级条件的工单执行逐级升级处理。升级信息打包：工单摘要+处理历史+超时程度+客户状态+建议动作。一级升级（SLA超时50%）：升级给组长，要求30分钟内接手；二级升级（SLA超时100%）：升级给主管并生成正式超时事件报告，要求15分钟内响应；如果升级后仍未在要求时间内响应则继续向上升级。同时处理因两次方案失败而升级的工单，为接手人提供完整的处理上下文和建议方向。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "sla-escalation-monitor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "通知系统",
+          "工单系统",
+          "组织架构系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 250
+      }
+    },
+    {
+      "id": "task-15",
+      "title": "工单关闭与满意度调查触发",
+      "type": "agent",
+      "prompt": "工单确认解决后执行关单操作，并在关闭后24小时内（升级工单12小时内）自动触发满意度调查。步骤：1)检查频率限制（同客户30天内<=2次）和免打扰设置；2)根据原始接入渠道选择回访方式（在线弹窗/邮件/微信模板/短信）；3)生成调查内容（1-5分CSAT量表含响应速度、解决效果、服务态度三维度+开放评价）；4)发送调查邀请，设置72小时回复截止。24小时无响应发送一次温和提醒。",
+      "dependentTasks": [
+        "task-12"
+      ],
+      "metadata": {
+        "agentRef": "satisfaction-followup",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "消息推送平台",
+          "调查系统"
+        ]
+      },
+      "position": {
+        "x": 2800,
+        "y": 400
+      }
+    },
+    {
+      "id": "task-16",
+      "title": "满意度结果分析与低分挽回",
+      "type": "agent",
+      "prompt": "收集客户满意度评分后进行处理：对CSAT>=4分的评价正常归档；对CSAT<=3分的评价执行低分处理流程：1)立即发送低分预警通知给工单处理坐席的组长；2)分析不满原因类别（响应慢/方案无效/态度问题/流程复杂/未解决）；3)对CSAT<=2分且含投诉意向的推送至投诉管理预警；4)发起二次挽回沟通（致歉+了解原因+补充方案或补偿）；5)记录挽回结果。汇总满意度数据识别低分集中的问题类型和坐席，输出改进建议。",
+      "dependentTasks": [
+        "task-15"
+      ],
+      "metadata": {
+        "agentRef": "satisfaction-followup",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "调查系统",
+          "通知系统",
+          "数据分析平台"
+        ]
+      },
+      "position": {
+        "x": 3100,
+        "y": 100
+      }
+    },
+    {
+      "id": "task-17",
+      "title": "高峰应急预案启动",
+      "type": "agent",
+      "prompt": "当检测到异常模式（来单量超基线3倍/批量超时风险/系统故障批量来单）时启动应急预案。5分钟内完成判定和启动：1)确认为系统性事件并评估影响范围；2)通知主管启动应急；3)执行应急措施：临时降低FAQ匹配阈值扩大AI分流、P3/P4工单SLA临时延长50%、启动跨组支援和外包坐席、对排队客户发送等待通知；4)统一制定批量问题回复模板；5)异常消除后制定积压清理计划并逐一跟进延迟工单；6)48小时内完成事后复盘报告。",
+      "dependentTasks": [
+        "task-8"
+      ],
+      "metadata": {
+        "agentRef": "sla-escalation-monitor",
+        "originalType": "agent",
+        "requiredIntegrations": [
+          "监控系统",
+          "通知系统",
+          "排班系统",
+          "工单系统"
+        ]
+      },
+      "position": {
+        "x": 1900,
+        "y": 250
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "task-1",
+      "target": "task-2"
+    },
+    {
+      "source": "task-2",
+      "target": "task-3"
+    },
+    {
+      "source": "task-3",
+      "target": "task-4"
+    },
+    {
+      "source": "task-4",
+      "target": "task-5"
+    },
+    {
+      "source": "task-5",
+      "target": "task-6"
+    },
+    {
+      "source": "task-4",
+      "target": "task-7"
+    },
+    {
+      "source": "task-7",
+      "target": "task-8"
+    },
+    {
+      "source": "task-7",
+      "target": "task-9"
+    },
+    {
+      "source": "task-9",
+      "target": "task-10"
+    },
+    {
+      "source": "task-10",
+      "target": "task-11"
+    },
+    {
+      "source": "task-11",
+      "target": "task-12"
+    },
+    {
+      "source": "task-12",
+      "target": "task-13"
+    },
+    {
+      "source": "task-12",
+      "target": "task-14"
+    },
+    {
+      "source": "task-12",
+      "target": "task-15"
+    },
+    {
+      "source": "task-15",
+      "target": "task-16"
+    },
+    {
+      "source": "task-8",
+      "target": "task-17"
+    }
+  ],
+  "variables": [
+    {
+      "variableId": "var-1",
+      "name": "ticketId",
+      "value": "",
+      "description": "工单唯一编号，贯穿全流程作为工单标识",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-2",
+      "name": "customerId",
+      "value": "",
+      "description": "客户唯一标识，用于关联客户画像和历史记录",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-3",
+      "name": "channel",
+      "value": "",
+      "description": "客户接入渠道（phone/chat/email/wechat/app/social）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-4",
+      "name": "category",
+      "value": "",
+      "description": "工单一级分类（inquiry/issue/change/complaint）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-5",
+      "name": "priority",
+      "value": "",
+      "description": "工单优先级（P1/P2/P3/P4）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-6",
+      "name": "customerLevel",
+      "value": "",
+      "description": "客户等级（VIP/high_value/normal/new）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-7",
+      "name": "slaDeadline",
+      "value": "",
+      "description": "SLA解决截止时间（ISO 8601格式）",
+      "required": true,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-8",
+      "name": "assignedAgentId",
+      "value": "",
+      "description": "分配的处理坐席ID",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-9",
+      "name": "resolutionStatus",
+      "value": "",
+      "description": "处理结果状态（resolved/escalated/pending_collaboration/pending_customer）",
+      "required": false,
+      "variableType": "string"
+    },
+    {
+      "variableId": "var-10",
+      "name": "csatScore",
+      "value": "",
+      "description": "客户满意度评分（1-5分）",
+      "required": false,
+      "variableType": "number"
+    }
+  ]
+}

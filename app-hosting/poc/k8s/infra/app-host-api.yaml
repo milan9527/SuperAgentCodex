@@ -1,0 +1,149 @@
+---
+# App Host Service API deployment
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-host-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-host-meta-db
+  namespace: app-host-system
+type: Opaque
+stringData:
+  DATABASE_URL: "postgresql://apphost:apphost123@app-host-meta-db:5432/app_host_meta"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-host-meta-db
+  namespace: app-host-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-host-meta-db
+  template:
+    metadata:
+      labels:
+        app: app-host-meta-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_DB
+              value: app_host_meta
+            - name: POSTGRES_USER
+              value: apphost
+            - name: POSTGRES_PASSWORD
+              value: apphost123
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-host-meta-db
+  namespace: app-host-system
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: app-host-meta-db
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-host-api-config
+  namespace: app-host-system
+data:
+  PORT: "3001"
+  ORCHESTRATOR: "k8s"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-host-api
+  namespace: app-host-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-host-api
+  template:
+    metadata:
+      labels:
+        app: app-host-api
+    spec:
+      serviceAccountName: app-host-api
+      containers:
+        - name: api
+          image: app-host-api:poc
+          ports:
+            - containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: app-host-api-config
+            - secretRef:
+                name: app-host-meta-db
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-host-api
+  namespace: app-host-system
+spec:
+  ports:
+    - port: 3001
+      targetPort: 3001
+  selector:
+    app: app-host-api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app-host-api
+  namespace: app-host-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: app-host-manager
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "services", "configmaps", "secrets", "pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["traefik.io"]
+    resources: ["ingressroutes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: app-host-manager-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: app-host-manager
+subjects:
+  - kind: ServiceAccount
+    name: app-host-api
+    namespace: app-host-system

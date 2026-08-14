@@ -1,0 +1,133 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2025-01-21T10:00:00.000Z",
+  "generator": "super-agent-batch-v2",
+  "industry": {
+    "id": "human-resources",
+    "name": "人力资源",
+    "icon": "👥",
+    "color": "#3B82F6"
+  },
+  "stats": {
+    "scopeCount": 4,
+    "agentCount": 15,
+    "skillCount": 50,
+    "workflowCount": 4,
+    "twinCount": 1,
+    "sopCount": 4
+  },
+  "scopes": [
+    {
+      "dirName": "recruitment-management",
+      "name": "招聘管理",
+      "agents": [
+        "recruitment-demand-analyst",
+        "resume-screening-specialist",
+        "interview-coordinator",
+        "offer-management-specialist"
+      ],
+      "skills": [
+        "background-check-management",
+        "campus-recruitment-management",
+        "candidate-initial-assessment",
+        "channel-effectiveness-analysis",
+        "compensation-package-design",
+        "demand-review-and-approval",
+        "evaluation-synthesis-reporting",
+        "interview-process-design",
+        "interview-scheduling-coordination",
+        "job-profile-building",
+        "offer-approval-workflow",
+        "recruitment-channel-strategy",
+        "recruitment-progress-monitoring",
+        "resume-intelligent-screening",
+        "salary-negotiation-support",
+        "talent-pool-management"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "onboarding-probation",
+      "name": "员工入职与试用期",
+      "agents": [
+        "onboarding-preparation-coordinator",
+        "onboarding-guide-specialist",
+        "probation-management-specialist",
+        "mentor-coordination-agent"
+      ],
+      "skills": [
+        "coaching-quality-monitoring",
+        "compliance-evidence-management",
+        "compliance-training-delivery",
+        "cross-department-coordination",
+        "document-verification",
+        "employee-experience-design",
+        "labor-contract-management",
+        "mentor-incentive-management",
+        "mentor-matching-algorithm",
+        "onboarding-checklist-management",
+        "probation-goal-tracking",
+        "structured-review-assessment",
+        "turnover-risk-management"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "performance-management",
+      "name": "绩效管理",
+      "agents": [
+        "goal-setting-facilitator",
+        "performance-evaluation-coordinator",
+        "performance-feedback-specialist",
+        "performance-data-analyst"
+      ],
+      "skills": [
+        "anomaly-detection-alerting",
+        "calibration-facilitation",
+        "evaluation-process-management",
+        "forced-distribution-execution",
+        "goal-decomposition",
+        "improvement-plan-design",
+        "okr-kpi-alignment",
+        "performance-data-analysis",
+        "performance-interview-coaching",
+        "performance-reporting",
+        "pip-management",
+        "smart-goal-review"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    },
+    {
+      "dirName": "training-development",
+      "name": "培训与发展",
+      "agents": [
+        "training-needs-analyst",
+        "course-delivery-specialist",
+        "training-effectiveness-evaluator"
+      ],
+      "skills": [
+        "annual-training-planning",
+        "course-design-development",
+        "instructor-management",
+        "kirkpatrick-evaluation",
+        "learning-analytics",
+        "talent-development-tracking",
+        "training-budget-allocation",
+        "training-execution",
+        "training-needs-diagnosis"
+      ],
+      "hasWorkflow": true,
+      "hasSop": true
+    }
+  ],
+  "digitalTwins": [
+    {
+      "dirName": "人力资源总监",
+      "name": "人力资源总监",
+      "role": "CHRO / VP of Human Resources"
+    }
+  ]
+}
