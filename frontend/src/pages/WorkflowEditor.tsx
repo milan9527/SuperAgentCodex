@@ -207,9 +207,12 @@ export function WorkflowEditor() {
 
   const [showWebhookPanel, setShowWebhookPanel] = useState(false);
   const [showSchedulePanel, setShowSchedulePanel] = useState(false);
-  const [workflowListCollapsed, setWorkflowListCollapsed] = useState(false);
+  const compactViewport = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 639px)').matches;
+  const [workflowListCollapsed, setWorkflowListCollapsed] = useState(compactViewport);
 
-  const [showCopilotPanel, setShowCopilotPanel] = useState(true);
+  const [showCopilotPanel, setShowCopilotPanel] = useState(!compactViewport);
   const [copilotSuccess, setCopilotSuccess] = useState<string | null>(null);
 
   // Inline rename state
@@ -903,8 +906,8 @@ export function WorkflowEditor() {
           {selectedWorkflow ? (
             <>
               {/* Workflow Header */}
-              <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-                <div className="flex items-center gap-4">
+              <div className="flex flex-col gap-2 border-b border-gray-800 p-2 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                <div className="flex min-w-0 items-center gap-2 overflow-x-auto sm:gap-4">
                   {isRenamingHeader ? (
                     <input
                       ref={renameInputRef}
@@ -982,7 +985,7 @@ export function WorkflowEditor() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2">
+                <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
                   <button
                     onClick={() => setShowHistoryPanel(!showHistoryPanel)}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors text-sm ${

@@ -1982,7 +1982,11 @@ function ChatInterfaceContent() {
   // Resizable workspace panel
   const [panelWidth, setPanelWidth] = useState(288) // 18rem ≈ 288px
   const [workspaceMode, setWorkspaceMode] = useState<'artifacts' | 'files'>('artifacts')
-  const [panelCollapsed, setPanelCollapsed] = useState(false)
+  const [panelCollapsed, setPanelCollapsed] = useState(
+    () => typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(max-width: 639px)').matches,
+  )
   // When a file is being previewed, collapse side panels for a clean left-chat / right-preview layout
   const [previewingFile, setPreviewingFile] = useState<{ path: string; name: string } | null>(null)
 
@@ -2186,8 +2190,8 @@ function ChatInterfaceContent() {
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header with unified selector */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-2 border-b border-gray-800 sm:px-4 sm:py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <UnifiedChatSelector
               selectedScopeId={selectedBusinessScopeId}
               selectedAgentId={selectedAgentId}
@@ -2207,7 +2211,7 @@ function ChatInterfaceContent() {
               title={t('chat.groupChatHint')}
             >
               <Users className="w-4 h-4" />
-              <span>{t('chat.groupChat')}</span>
+              <span className="hidden sm:inline">{t('chat.groupChat')}</span>
             </button>
           </div>
           <div className="flex items-center gap-1">
@@ -2218,7 +2222,7 @@ function ChatInterfaceContent() {
                 title={t('chat.saveToMemoryHint')}
               >
                 <Brain className="w-3.5 h-3.5" />
-                <span>{t('chat.saveToMemory')}</span>
+                <span className="hidden sm:inline">{t('chat.saveToMemory')}</span>
               </button>
             )}
             <button
@@ -2227,7 +2231,7 @@ function ChatInterfaceContent() {
               title={t('chat.clearConversation')}
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>{t('chat.clear')}</span>
+              <span className="hidden sm:inline">{t('chat.clear')}</span>
             </button>
           </div>
         </div>

@@ -7,9 +7,10 @@ interface DepartmentSectionProps {
   icon: ReactNode
   color: string
   agents: Agent[]
+  onSelectAgent?: (agentId: string) => void
 }
 
-export function DepartmentSection({ name, icon, color, agents }: DepartmentSectionProps) {
+export function DepartmentSection({ name, icon, color, agents, onSelectAgent }: DepartmentSectionProps) {
   if (agents.length === 0) return null
 
   return (
@@ -26,7 +27,11 @@ export function DepartmentSection({ name, icon, color, agents }: DepartmentSecti
       {/* Agent Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} />
+          <AgentCard
+            key={agent.id}
+            agent={agent}
+            onClick={onSelectAgent ? () => onSelectAgent(agent.id) : undefined}
+          />
         ))}
       </div>
     </div>

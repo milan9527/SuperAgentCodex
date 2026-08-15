@@ -220,7 +220,11 @@ export function Dashboard() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-6">
                     {scopeAgents.map((agent) => (
-                      <AgentCard key={agent.id} agent={agent} />
+                      <AgentCard
+                        key={agent.id}
+                        agent={agent}
+                        onClick={() => navigate(`/agents?id=${agent.id}`)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -252,6 +256,7 @@ export function Dashboard() {
                 icon={<Briefcase className="w-4 h-4 text-white" />}
                 color="bg-gray-500/20"
                 agents={agentsByScopeId['unassigned']}
+                onSelectAgent={(agentId) => navigate(`/agents?id=${agentId}`)}
               />
             )}
           </div>

@@ -3,6 +3,8 @@
   "context": {
     "@aws-cdk/core:validateAgainstDefaultRules": true,
     "@aws-cdk/core:stackRelativeExports": true,
-    "stackName": "SuperAgentV2Stack"
+    "stackName": "SuperAgentCodex",
+    "deployTarget": "ecs",
+    "enableCdn": "true"
   }
 }

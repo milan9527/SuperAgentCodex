@@ -43,7 +43,11 @@ export function SessionHistoryPanel({
   onNewSession,
   refreshKey = 0,
 }: SessionHistoryPanelProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(
+    () => typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(max-width: 639px)').matches,
+  )
   const [sessions, setSessions] = useState<SessionItem[]>([])
   const [loading, setLoading] = useState(false)
   const hasAutoSelected = useRef(false)
@@ -161,7 +165,7 @@ export function SessionHistoryPanel({
   }
 
   return (
-    <div className="w-60 flex flex-col border-r border-gray-800 bg-gray-900/50 flex-shrink-0">
+    <div className="fixed inset-y-0 left-16 z-40 w-60 flex flex-col border-r border-gray-800 bg-gray-900 shadow-2xl sm:static sm:z-auto sm:bg-gray-900/50 sm:shadow-none flex-shrink-0">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-3 border-b border-gray-800">
         <span className="text-sm font-medium text-gray-300">Sessions</span>
