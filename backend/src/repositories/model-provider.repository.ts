@@ -13,6 +13,7 @@ export interface ModelProviderEntity {
   base_url: string | null;
   credential_id: string | null;
   default_model_id: string | null;
+  allowed_model_ids: string[];
   is_org_default: boolean;
   status: string;
   created_by: string | null;

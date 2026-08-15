@@ -8,10 +8,6 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
-import * as dotenv from 'dotenv';
-
-// Load environment variables
-dotenv.config();
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -71,24 +67,34 @@ async function main() {
   const userId = profile.id;
   console.log(`Using user: ${profile.full_name} (${userId})`);
 
-  // Default model provider — Amazon Bedrock (Claude Opus 4.8). Every org needs
-  // an org-default provider so model resolution, the chat picker, and
-  // Settings → Models work out of the box. Idempotent on (org, name).
+  // Every org needs a runtime-compatible default provider. Bedrock Claude
+  // models are intentionally routed through LiteLLM, while the native
+  // AgentCore path uses the OpenAI Responses model exposed by Bedrock.
   console.log('Creating default model provider...');
+  await prisma.model_providers.updateMany({
+    where: { organization_id: orgId, is_org_default: true },
+    data: { is_org_default: false },
+  });
   await prisma.model_providers.upsert({
-    where: { unique_provider_name_per_org: { organization_id: orgId, name: 'Amazon Bedrock' } },
-    update: { default_model_id: 'global.anthropic.claude-opus-4-8', is_org_default: true, status: 'active' },
+    where: { unique_provider_name_per_org: { organization_id: orgId, name: 'Codex Bedrock' } },
+    update: {
+      default_model_id: 'openai.gpt-5.4',
+      allowed_model_ids: ['openai.gpt-5.4'],
+      is_org_default: true,
+      status: 'active',
+    },
     create: {
       organization_id: orgId,
-      name: 'Amazon Bedrock',
+      name: 'Codex Bedrock',
       type: 'bedrock',
-      default_model_id: 'global.anthropic.claude-opus-4-8',
+      default_model_id: 'openai.gpt-5.4',
+      allowed_model_ids: ['openai.gpt-5.4'],
       is_org_default: true,
       status: 'active',
       created_by: userId,
     },
   });
-  console.log('Default model provider ready: Amazon Bedrock -> global.anthropic.claude-opus-4-8');
+  console.log('Default model provider ready: Codex Bedrock -> openai.gpt-5.4');
 
   // Create Business Scopes
   console.log('Creating business scopes...');

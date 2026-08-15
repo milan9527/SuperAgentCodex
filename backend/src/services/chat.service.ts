@@ -29,6 +29,7 @@ import {
 } from './agent-types.js';
 import type { AgentHistoryMessage, AgentRuntime } from './agent-runtime.js';
 import { agentRuntime as defaultAgentRuntime } from './agent-runtime-factory.js';
+import { resolveInvocationRuntime } from './agent-runtime-router.js';
 import { resolveModel, extractSelection } from './model-resolver.js';
 import type { ModelSelection } from '../schemas/model-provider.schema.js';
 import {
@@ -56,6 +57,7 @@ import {
 import { processConversationEvent, flushActiveSubAgents, type ConversationHookContext } from './conversation-hooks.js';
 import { sanitizeEvent } from './output-sanitizer.js';
 import { distillationService } from './distillation.service.js';
+import { ConversationEventCoalescer } from './conversation-event-coalescer.js';
 
 export type { SSEEvent };
 export { formatSSEEvent };
@@ -129,13 +131,15 @@ export class ChatService {
       await this.agentRuntime.disconnectSession(session.provider_thread_id);
     }
 
-    streamRegistry.push(sessionId, {
-      type: 'result',
-      provider: normalizeRuntimeProvider(this.agentRuntime.name),
-      providerThreadId: session.provider_thread_id ?? undefined,
-      status: 'interrupted',
-      numTurns: 1,
-    });
+    if (session.provider_runtime !== 'codex' && session.provider_runtime !== 'agentcore') {
+      streamRegistry.push(sessionId, {
+        type: 'result',
+        provider: normalizeRuntimeProvider(session.provider_runtime ?? this.agentRuntime.name),
+        providerThreadId: session.provider_thread_id ?? undefined,
+        status: 'interrupted',
+        numTurns: 1,
+      });
+    }
     return wasActive;
   }
 
@@ -295,11 +299,22 @@ export class ChatService {
       sessionId,
       agentConfig,
       skills,
-      providerThreadId,
       workspacePath,
       pluginPaths,
       mcpServers,
     } = result;
+    const invocationRuntime = resolveInvocationRuntime(this.agentRuntime, agentConfig);
+    const session = await this.getSessionById(sessionId, options.organizationId);
+    const providerThread = this.getProviderThreadForRuntime(session, invocationRuntime.name);
+    const replayHistory = (
+      providerThread.id
+      || (
+        session.provider_runtime
+        && session.provider_runtime !== invocationRuntime.name
+      )
+    )
+      ? await this.loadReplayHistory(options.organizationId, sessionId)
+      : undefined;
 
     // Apply system prompt override if provided (e.g., for Project module)
     if (options.systemPromptOverride) {
@@ -316,7 +331,7 @@ export class ChatService {
     const allContentBlocks: ContentBlock[] = [];
 
     try {
-      const conversationGenerator = this.agentRuntime.runConversation(
+      const conversationGenerator = invocationRuntime.runConversation(
         {
           agentId: agentConfig.id,
           // Use the resolved session id (prepareScopeSession creates one for new
@@ -324,12 +339,13 @@ export class ChatService {
           // make the runtime fall back to the shared 'ephemeral/' S3 workspace
           // prefix (files collide across sessions and can't be fetched by id).
           sessionId,
-          providerThreadId,
+          providerThreadId: providerThread.id,
           message: options.message,
           organizationId: options.organizationId,
           userId: options.userId,
           workspacePath,
           scopeId: options.businessScopeId,
+          history: replayHistory,
         },
         agentConfig,
         skills,
@@ -337,10 +353,12 @@ export class ChatService {
         Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
       );
 
-      const timeoutMs = this.agentRuntime.name === 'codex'
+      const timeoutMs = invocationRuntime.name === 'codex'
+        || invocationRuntime.name === 'agentcore'
         ? config.codex.responseTimeoutMs
         : config.claude.responseTimeoutMs;
       let timedOut = false;
+      let runtimeError: ConversationEvent | undefined;
 
       await this.iterateWithTimeout(
         conversationGenerator,
@@ -354,7 +372,7 @@ export class ChatService {
             chatSessionRepository.updateProviderThread(
               sessionId,
               options.organizationId,
-              this.agentRuntime.name,
+              invocationRuntime.name,
               event.providerThreadId ?? event.sessionId,
               sessionModel,
               { providerTurnId: event.providerTurnId ?? null },
@@ -363,12 +381,19 @@ export class ChatService {
           if (event.type === 'assistant' && event.content) {
             appendContentBlocks(allContentBlocks, event.content);
           }
+          if (event.type === 'error') {
+            runtimeError = event;
+          }
         },
         () => { timedOut = true; },
       );
 
       if (timedOut) {
+        await invocationRuntime.disconnectSession(sessionId).catch(() => {});
         throw new Error('Agent response timed out');
+      }
+      if (runtimeError) {
+        throw new Error(runtimeError.message ?? runtimeError.code ?? 'Agent runtime failed');
       }
     } finally {
       await agentStatusService.setActive(agentConfig.id, options.organizationId);
@@ -582,7 +607,7 @@ export class ChatService {
   /**
    * Stream a chat response using SSE.
    * Supports two flows:
-   *   1. Business-scope-based (new): uses per-session workspace with CLAUDE.md, subagents, skills
+   *   1. Business-scope-based: uses the selected runtime layout, subagents, and skills
    *   2. Legacy agent-based: uses per-agent workspace (backward compat)
    */
   async streamChat(
@@ -649,15 +674,10 @@ export class ChatService {
     // Supports both the new provider+model selection and the legacy bare model id.
     const requestSelection: ModelSelection | undefined =
       options.modelSelection ?? (options.model ? { modelId: options.model } : undefined);
-    console.log(
-      `[chat] requestSelection=${JSON.stringify(requestSelection)}, runtime=${this.agentRuntime.name}, providerThreadId=${providerThreadId}`,
-    );
+    console.log(`[chat] requestSelection=${JSON.stringify(requestSelection)}`);
     if (requestSelection) {
       const prev = agentConfig.resolvedModel;
-      if (this.agentRuntime.name === 'codex') {
-        agentConfig.model = requestSelection.modelId ?? agentConfig.model;
-        agentConfig.resolvedModel = undefined;
-      } else if (requestSelection.providerId) {
+      if (requestSelection.providerId) {
         // Explicit provider switch → full re-resolve.
         agentConfig.resolvedModel = await resolveModel(organizationId, { requestSelection });
       } else if (prev) {
@@ -667,34 +687,35 @@ export class ChatService {
       } else {
         agentConfig.resolvedModel = await resolveModel(organizationId, { requestSelection });
       }
-      if (this.agentRuntime.name !== 'codex') {
-        agentConfig.model = agentConfig.resolvedModel?.modelId ?? agentConfig.model;
-      }
+      agentConfig.model = agentConfig.resolvedModel?.modelId ?? agentConfig.model;
     }
 
     const effectiveModel = agentConfig.resolvedModel?.modelId ?? agentConfig.model;
-
-    // Note: non-Anthropic Bedrock models (Nova, DeepSeek, …) are NOT blocked
-    // here anymore. The AgentCore runtime transparently routes them through the
-    // backend's built-in LLM proxy (/v1/messages → Bedrock Converse), which
-    // translates the Anthropic schema the Claude Code CLI emits.
+    const invocationRuntime = resolveInvocationRuntime(this.agentRuntime, agentConfig);
+    const currentSession = await this.getSessionById(sessionId, organizationId);
+    const providerThread = this.getProviderThreadForRuntime(
+      currentSession,
+      invocationRuntime.name,
+    );
+    providerThreadId = providerThread.id;
+    providerThreadModel = providerThread.model;
 
     if (
-      this.agentRuntime.name === 'claude'
-      && providerThreadId
+      providerThreadId
       && providerThreadModel
       && effectiveModel
       && providerThreadModel !== effectiveModel
     ) {
       console.log(
-        `[chat] Model changed (session was ${providerThreadModel} -> now ${effectiveModel}), resetting Claude session`,
+        `[chat] Model changed for ${invocationRuntime.name} `
+        + `(session was ${providerThreadModel} -> now ${effectiveModel}), resetting provider thread`,
       );
       providerThreadId = undefined;
       if (sessionId) {
         chatSessionRepository.updateProviderThread(
           sessionId,
           organizationId,
-          'claude',
+          invocationRuntime.name,
           null,
           null,
           null,
@@ -702,13 +723,15 @@ export class ChatService {
       }
     }
     console.log(
-      `[chat] Final provider=${agentConfig.resolvedModel?.provider}, model=${effectiveModel}, sessionModel=${providerThreadModel ?? '(none)'}, providerThreadId=${providerThreadId}`,
+      `[chat] Final provider=${agentConfig.resolvedModel?.provider}, model=${effectiveModel}, `
+      + `runtime=${invocationRuntime.name}, sessionModel=${providerThreadModel ?? '(none)'}, `
+      + `providerThreadId=${providerThreadId}`,
     );
 
-    const replayHistory = (
-      this.agentRuntime.name === 'codex'
-      || this.agentRuntime.name === 'agentcore'
-    ) && providerThreadId
+    const replayHistory = providerThreadId || (
+      currentSession.provider_runtime
+      && currentSession.provider_runtime !== invocationRuntime.name
+    )
       ? await this.loadReplayHistory(organizationId, sessionId)
       : undefined;
 
@@ -775,9 +798,18 @@ export class ChatService {
     };
     reply.raw.on('close', onClose);
 
+    const emitStreamEvent = (event: ConversationEvent) => {
+      streamRegistry.push(sessionId, event);
+      if (!clientDisconnected) {
+        this.writeConversationEventSSE(reply, event);
+      }
+    };
+    const eventCoalescer = new ConversationEventCoalescer(emitStreamEvent);
+
     const heartbeatInterval = setInterval(() => {
       if (!clientDisconnected) {
         try {
+          eventCoalescer.flush();
           reply.raw.write(formatSSEEvent({ data: JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }) }));
         } catch { /* client disconnected */ }
       }
@@ -793,6 +825,7 @@ export class ChatService {
       // Only forward event types that don't come from the conversation generator
       if (event.type === 'preview_ready') {
         try {
+          eventCoalescer.flush();
           reply.raw.write(formatSSEEvent({
             data: JSON.stringify({ type: event.type, appId: event.appId, url: event.url, appName: event.appName }),
           }));
@@ -836,7 +869,7 @@ export class ChatService {
       // Use the configured agent runtime (claude or openclaw).
       // AgentCore container isolation is handled by the runtime provider itself
       // when AGENT_RUNTIME=openclaw (which runs on AgentCore).
-      const conversationGenerator = this.agentRuntime.runConversation(
+      const conversationGenerator = invocationRuntime.runConversation(
             {
               agentId: agentConfig.id,
               sessionId,
@@ -857,8 +890,8 @@ export class ChatService {
           );
 
       const timeoutMs = (
-        this.agentRuntime.name === 'codex'
-        || this.agentRuntime.name === 'agentcore'
+        invocationRuntime.name === 'codex'
+        || invocationRuntime.name === 'agentcore'
       )
         ? config.codex.responseTimeoutMs
         : config.claude.responseTimeoutMs;
@@ -873,7 +906,7 @@ export class ChatService {
               chatSessionRepository.updateProviderThread(
                 sessionId,
                 organizationId,
-                this.agentRuntime.name,
+                invocationRuntime.name,
                 event.providerThreadId ?? event.sessionId,
                 event.model ?? effectiveModel ?? null,
                 { providerTurnId: event.providerTurnId ?? null },
@@ -925,39 +958,28 @@ export class ChatService {
           // Process through conversation hooks (metrics, sub-agent detection)
           processConversationEvent(hookCtx, event);
 
-          // Push to stream registry for reconnecting clients
-          streamRegistry.push(sessionId, event);
-
-          // Only write to SSE if client is still connected
-          if (!clientDisconnected) {
-            this.writeConversationEventSSE(reply, event);
-          }
+          eventCoalescer.push(event);
         },
         () => {
-          if (!clientDisconnected) {
-            const timeoutEvent: ConversationEvent = {
-              type: 'error', sessionId: conversationSessionId,
-              code: 'AGENT_TIMEOUT', message: 'Agent response timed out', suggestedAction: 'Please try again',
-            };
-            this.writeConversationEventSSE(reply, timeoutEvent);
-          }
+          const timeoutEvent: ConversationEvent = {
+            type: 'error', sessionId: conversationSessionId,
+            code: 'AGENT_TIMEOUT', message: 'Agent response timed out', suggestedAction: 'Please try again',
+          };
+          eventCoalescer.push(timeoutEvent);
           if (sessionId) {
-            this.agentRuntime.disconnectSession(sessionId).catch((err) => {
+            invocationRuntime.disconnectSession(sessionId).catch((err) => {
               console.error('Error disconnecting session on timeout:', err);
             });
           }
         },
       );
     } catch (error) {
-      if (!clientDisconnected) {
-        const errorEvent: ConversationEvent = {
-          type: 'error', sessionId: conversationSessionId,
-          code: 'AGENT_EXECUTION_ERROR', message: error instanceof Error ? error.message : 'Unknown error',
-          suggestedAction: 'Please try again',
-        };
-        streamRegistry.push(sessionId, errorEvent);
-        this.writeConversationEventSSE(reply, errorEvent);
-      }
+      const errorEvent: ConversationEvent = {
+        type: 'error', sessionId: conversationSessionId,
+        code: 'AGENT_EXECUTION_ERROR', message: error instanceof Error ? error.message : 'Unknown error',
+        suggestedAction: 'Please try again',
+      };
+      eventCoalescer.push(errorEvent);
     } finally {
       clearInterval(heartbeatInterval);
       reply.raw.removeListener('close', onClose);
@@ -967,6 +989,10 @@ export class ChatService {
 
       // Flush any sub-agents still tracked as busy (handles interrupted sessions)
       flushActiveSubAgents(hookCtx);
+
+      // A short text-delta buffer smooths Codex's character-sized CJK chunks.
+      // Flush it before completing the registry and sending [DONE].
+      eventCoalescer.flush();
 
       // Send [DONE] immediately so the frontend can stop the loading indicator.
       // All remaining cleanup (DB writes, traces) happens after.
@@ -1102,6 +1128,14 @@ export class ChatService {
       organizationId,
       skillIds: scopeForWorkspace.skills.map(s => s.id),
       mcpServerIds: [],
+      subAgents: Object.fromEntries(agentsWithSkills.map(agent => [
+        agent.name,
+        {
+          description: `${agent.displayName} - ${agent.role ?? 'General assistant'}`,
+          prompt: agent.systemPrompt ?? `Act as ${agent.displayName}.`,
+          skillNames: agent.skillNames,
+        },
+      ])),
     };
 
     // Resolve provider (bedrock/litellm) from scope default → agent config → org default.
@@ -1119,7 +1153,10 @@ export class ChatService {
       }
       return [a.name, { displayName: a.displayName || a.name, avatar: avatarUrl }];
     }));
-    const providerThread = this.getProviderThreadForRuntime(session);
+    const providerThread = this.getProviderThreadForRuntime(
+      session,
+      resolveInvocationRuntime(this.agentRuntime, agentConfig).name,
+    );
     return {
       sessionId,
       workspacePath,
@@ -1251,7 +1288,10 @@ export class ChatService {
       agentSelection: extractSelection(agent.model_config),
     });
 
-    const providerThread = this.getProviderThreadForRuntime(session);
+    const providerThread = this.getProviderThreadForRuntime(
+      session,
+      resolveInvocationRuntime(this.agentRuntime, agentConfig).name,
+    );
     return {
       sessionId,
       workspacePath,
@@ -1266,9 +1306,10 @@ export class ChatService {
 
   private getProviderThreadForRuntime(
     session: ChatSessionEntity,
+    runtimeName: string,
   ): { id?: string; model?: string } {
     if (
-      session.provider_runtime === this.agentRuntime.name
+      session.provider_runtime === runtimeName
       && session.provider_thread_id
     ) {
       return {
@@ -1276,7 +1317,7 @@ export class ChatService {
         model: session.provider_thread_model ?? undefined,
       };
     }
-    if (this.agentRuntime.name === 'claude' && session.claude_session_id) {
+    if (runtimeName === 'claude' && session.claude_session_id) {
       return {
         id: session.claude_session_id,
         model: session.claude_session_model ?? undefined,
@@ -1318,22 +1359,63 @@ export class ChatService {
           break;
         case 'assistant':
           reply.raw.write(formatSSEEvent({
-            data: JSON.stringify({ type: 'assistant', content: safe.content, model: safe.model, speakerAgentName: safe.speakerAgentName, speakerAgentAvatar: safe.speakerAgentAvatar }),
+            data: JSON.stringify({
+              type: 'assistant',
+              content: safe.content,
+              model: safe.model,
+              status: safe.status,
+              provider_thread_id: safe.providerThreadId,
+              provider_turn_id: safe.providerTurnId,
+              speakerAgentName: safe.speakerAgentName,
+              speakerAgentAvatar: safe.speakerAgentAvatar,
+            }),
           }));
           break;
         case 'result':
           reply.raw.write(formatSSEEvent({
-            data: JSON.stringify({ type: 'result', session_id: safe.sessionId, duration_ms: safe.durationMs, num_turns: safe.numTurns, model: safe.model, token_usage: safe.tokenUsage ? { input_tokens: safe.tokenUsage.inputTokens, output_tokens: safe.tokenUsage.outputTokens, cache_read_input_tokens: safe.tokenUsage.cacheReadInputTokens, cache_creation_input_tokens: safe.tokenUsage.cacheCreationInputTokens, total_cost_usd: safe.tokenUsage.totalCostUsd } : undefined }),
+            data: JSON.stringify({
+              type: 'result',
+              session_id: safe.sessionId,
+              provider_thread_id: safe.providerThreadId,
+              provider_turn_id: safe.providerTurnId,
+              status: safe.status,
+              duration_ms: safe.durationMs,
+              num_turns: safe.numTurns,
+              model: safe.model,
+              token_usage: safe.tokenUsage ? {
+                input_tokens: safe.tokenUsage.inputTokens,
+                output_tokens: safe.tokenUsage.outputTokens,
+                cache_read_input_tokens: safe.tokenUsage.cacheReadInputTokens,
+                cache_creation_input_tokens: safe.tokenUsage.cacheCreationInputTokens,
+                total_cost_usd: safe.tokenUsage.totalCostUsd,
+              } : undefined,
+            }),
           }));
           break;
         case 'heartbeat':
           reply.raw.write(formatSSEEvent({
-            data: JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }),
+            data: JSON.stringify({
+              type: 'heartbeat',
+              timestamp: Date.now(),
+              status: safe.status,
+              provider_thread_id: safe.providerThreadId,
+              provider_turn_id: safe.providerTurnId,
+              diff: safe.diff,
+              plan: safe.plan,
+            }),
           }));
           break;
         case 'error':
           reply.raw.write(formatSSEEvent({
-            data: JSON.stringify({ type: 'error', code: safe.code, message: safe.message, suggested_action: safe.suggestedAction }),
+            data: JSON.stringify({
+              type: 'error',
+              code: safe.code,
+              message: safe.message,
+              suggested_action: safe.suggestedAction,
+              status: safe.status,
+              provider_thread_id: safe.providerThreadId,
+              provider_turn_id: safe.providerTurnId,
+            }),
           }));
           break;
       }

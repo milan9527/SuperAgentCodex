@@ -9,6 +9,7 @@ COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
+COPY runtime-assets/ ./runtime-assets/
 RUN npx tsc && npm prune --omit=dev
 
 FROM public.ecr.aws/docker/library/node:22-slim
@@ -29,6 +30,7 @@ RUN apt-get update \
 COPY --from=build --chown=1000:1000 /app/package*.json ./
 COPY --from=build --chown=1000:1000 /app/node_modules ./node_modules
 COPY --from=build --chown=1000:1000 /app/dist ./dist
+COPY --from=build --chown=1000:1000 /app/runtime-assets ./runtime-assets
 
 ENV CODEX_HOME=/home/node/.codex \
     CODEX_EXECUTABLE=/usr/local/bin/codex \

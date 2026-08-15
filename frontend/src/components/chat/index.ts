@@ -1,7 +1,7 @@
 /**
  * Chat Components
  *
- * React components for rendering Claude Agent SDK chat content blocks.
+ * React components for rendering provider-neutral agent content blocks.
  *
  * @module components/chat
  */

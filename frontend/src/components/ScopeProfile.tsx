@@ -13,6 +13,10 @@ import { restClient } from '@/services/api/restClient'
 import type { BusinessScope } from '@/services/businessScopeService'
 import type { MCPServer, MCPServerConfig, Agent, ModelProvider } from '@/types'
 import { modelProviderService } from '@/services/modelProviderService'
+import {
+  filterRuntimeCompatibleProviders,
+  loadRuntimeModelsForProvider,
+} from '@/services/runtimeModelCompatibility'
 import type { McpServerEntry } from '@/data/mcp-servers'
 import { IMChannelsPanel } from './IMChannelsPanel'
 import { ScopeMemoryPanel } from './ScopeMemoryPanel'
@@ -1225,17 +1229,25 @@ function ModelConfigSection({ scope, onSave, onError }: {
 
   // Load providers once.
   useEffect(() => {
-    modelProviderService.list().then(setProviders).catch(() => setProviders([]))
+    modelProviderService.list()
+      .then(filterRuntimeCompatibleProviders)
+      .then(setProviders)
+      .catch(() => setProviders([]))
   }, [])
 
-  // Load models for the selected provider (litellm only).
+  // Only models explicitly enabled in Admin Settings are selectable here.
   useEffect(() => {
+    if (!selectedProviderId) {
+      setModels([])
+      return
+    }
+    const provider = providers.find(item => item.id === selectedProviderId)
     setIsLoadingModels(true)
-    modelProviderService.listModels(selectedProviderId || undefined)
+    loadRuntimeModelsForProvider(provider)
       .then(setModels)
       .catch(() => setModels([]))
       .finally(() => setIsLoadingModels(false))
-  }, [selectedProviderId])
+  }, [selectedProviderId, providers])
 
   const persist = async (next: { providerId?: string; modelId?: string }) => {
     setIsSaving(true)

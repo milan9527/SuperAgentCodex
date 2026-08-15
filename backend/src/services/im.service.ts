@@ -60,7 +60,7 @@ export interface IMAdapter {
   removeBot?(bindingId: string): void;
 }
 
-class IMService {
+export class IMService {
   private adapters = new Map<string, IMAdapter>();
 
   registerAdapter(channelType: string, adapter: IMAdapter): void {

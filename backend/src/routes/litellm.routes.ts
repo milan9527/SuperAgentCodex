@@ -6,7 +6,7 @@
  */
 
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requireAdminAccess } from '../middleware/auth.js';
 import { config } from '../config/index.js';
 import { modelProviderRepository } from '../repositories/model-provider.repository.js';
 import { credentialVaultService } from '../services/credential-vault.service.js';
@@ -14,7 +14,7 @@ import { listBedrockModels } from '../services/bedrock-models.service.js';
 
 export async function litellmRoutes(fastify: FastifyInstance): Promise<void> {
   /**
-   * GET /api/litellm/models — List available models from a LiteLLM proxy.
+   * GET /api/litellm/models — Admin-only live provider catalog.
    * Returns both the public model name (for display) and the LiteLLM
    * model identifier (for passing to Claude Code SDK).
    *
@@ -24,7 +24,7 @@ export async function litellmRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.get<{ Querystring: { providerId?: string; refresh?: string; bedrock?: string } }>(
     '/models',
-    { preHandler: [authenticate] },
+    { preHandler: [authenticate, requireAdminAccess] },
     async (request: FastifyRequest<{ Querystring: { providerId?: string; refresh?: string; bedrock?: string } }>, reply: FastifyReply) => {
       let baseUrl = config.litellm.baseUrl;
       let apiKey = config.litellm.apiKey;

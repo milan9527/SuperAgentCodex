@@ -12,6 +12,7 @@ import { AgentCoreAgentRuntime } from './agent-runtime-agentcore.js';
 import { OpenClawAgentRuntime } from './agent-runtime-openclaw.js';
 import { BerriAIAgentRuntime } from './agent-runtime-berriai.js';
 import { CodexAgentRuntime } from './agent-runtime-codex.js';
+import { ModelRoutingAgentRuntime } from './agent-runtime-router.js';
 
 export type AgentRuntimeName = 'claude' | 'codex' | 'agentcore' | 'openclaw' | 'berriai';
 
@@ -44,6 +45,14 @@ function createRuntime(name: AgentRuntimeName): AgentRuntime {
 const runtimeName = resolveRuntimeName();
 
 /** The active agent runtime singleton. */
-export const agentRuntime: AgentRuntime = createRuntime(runtimeName);
+const configuredRuntime = createRuntime(runtimeName);
+export const agentRuntime: AgentRuntime = (
+  runtimeName === 'codex' || runtimeName === 'agentcore'
+)
+  ? new ModelRoutingAgentRuntime(configuredRuntime, new ClaudeAgentRuntime())
+  : configuredRuntime;
 
-console.log(`[agent-runtime] Using "${agentRuntime.name}" runtime`);
+console.log(
+  `[agent-runtime] Using "${agentRuntime.name}" primary runtime`
+  + `${agentRuntime instanceof ModelRoutingAgentRuntime ? ' with LiteLLM Claude routing' : ''}`,
+);

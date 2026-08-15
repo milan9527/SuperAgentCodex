@@ -106,12 +106,32 @@ vi.mock('../../src/repositories/agent.repository.js', () => ({
 }));
 
 // Mock the AppError
-vi.mock('../../src/middleware/errorHandler.js', () => ({
-  AppError: {
-    notFound: (msg: string) => new Error(msg),
-    validation: (msg: string) => new Error(msg),
-  },
-}));
+vi.mock('../../src/middleware/errorHandler.js', () => {
+  class MockAppError extends Error {
+    constructor(
+      message: string,
+      public readonly statusCode = 500,
+      public readonly code = 'INTERNAL_ERROR',
+    ) {
+      super(message);
+    }
+
+    static notFound(message: string) {
+      return new MockAppError(message, 404, 'NOT_FOUND');
+    }
+
+    static validation(message: string) {
+      return new MockAppError(message, 400, 'VALIDATION_ERROR');
+    }
+  }
+
+  return {
+    AppError: MockAppError,
+    ErrorCodes: {
+      AGENT_MODEL_RUNTIME_UNSUPPORTED: 'AGENT_MODEL_RUNTIME_UNSUPPORTED',
+    },
+  };
+});
 
 // Mock the skill service module (default import used by ChatService)
 vi.mock('../../src/services/skill.service.js', () => ({
@@ -313,7 +333,15 @@ describe('ChatService', () => {
     it('should format result events as SSE data', async () => {
       const events: ConversationEvent[] = [
         { type: 'session_start', sessionId: 'sdk-session-1' },
-        { type: 'result', sessionId: 'sdk-session-1', durationMs: 2500, numTurns: 3 },
+        {
+          type: 'result',
+          sessionId: 'sdk-session-1',
+          providerThreadId: 'thread-1',
+          providerTurnId: 'turn-1',
+          status: 'completed',
+          durationMs: 2500,
+          numTurns: 3,
+        },
       ];
 
       const mockAgent = createMockClaudeAgentService(events);
@@ -331,6 +359,9 @@ describe('ChatService', () => {
       expect(resultChunk).toBeDefined();
       expect(resultChunk).toContain('"duration_ms":2500');
       expect(resultChunk).toContain('"num_turns":3');
+      expect(resultChunk).toContain('"provider_thread_id":"thread-1"');
+      expect(resultChunk).toContain('"provider_turn_id":"turn-1"');
+      expect(resultChunk).toContain('"status":"completed"');
     });
 
     it('should send [DONE] event at the end of the stream', async () => {

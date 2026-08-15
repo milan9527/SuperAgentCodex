@@ -5,7 +5,7 @@
  * discovery, and A2A protocol support.
  *
  * Design:
- *   - Lazy SDK loading (same pattern as agentcore.service.ts)
+ *   - Lazy SDK loading
  *   - Non-blocking: sync failures don't break local operations
  *   - Config-driven: disabled when AGENTCORE_REGISTRY_ENABLED is false
  *
@@ -72,7 +72,7 @@ export class AgentCoreRegistryService {
 
   /**
    * Lazily load AWS SDK clients.
-   * Follows the same pattern as agentcore.service.ts — dev environments
+   * Dev environments
    * without AWS credentials can still start the server.
    */
   private async ensureSDK(): Promise<void> {

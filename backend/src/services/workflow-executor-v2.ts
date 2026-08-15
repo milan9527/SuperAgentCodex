@@ -5,12 +5,12 @@
  * The workflow plan is serialized into the runtime's root instruction file,
  * and the agent executes all steps within one conversation.
  *
- * Progress is reported via an in-process MCP server that provides
+ * Progress is reported via a serializable stdio MCP server that provides
  * workflow_step_start / workflow_step_complete / workflow_step_failed tools.
  *
  * Improvements over initial implementation:
  * - Execution state persisted to workflow_executions / node_executions tables
- * - Configurable execution timeout with AbortController
+ * - Configurable execution timeout with runtime interruption
  * - Step-level tracking via MCP progress tools + DB checkpoints
  * - Shared workspace provisioning (no duplicated code)
  */
@@ -27,6 +27,7 @@ import { checkpointService, type CheckpointType } from './checkpoint.service.js'
 import { prisma } from '../config/database.js';
 import { config } from '../config/index.js';
 import { recordTokenUsage } from './token-usage.service.js';
+import { extractSelection, resolveModel } from './model-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,6 +69,27 @@ export interface WorkflowProgressEvent {
   /** Checkpoint info when type === 'paused' */
   checkpointId?: string;
   checkpointType?: string;
+}
+
+export class WorkflowProgressAccumulator {
+  private readonly reported = new Set<string>();
+  private text = '';
+
+  constructor(private readonly nodeTitleMap: Map<string, string>) {}
+
+  accept(event: WorkflowProgressEvent): WorkflowProgressEvent[] {
+    if (!event.taskId || !isStepEvent(event)) return [event];
+    const key = progressEventKey(event);
+    if (this.reported.has(key)) return [];
+    this.reported.add(key);
+    return [event];
+  }
+
+  acceptText(text: string): WorkflowProgressEvent[] {
+    this.text += text;
+    return parseProgressMarkers(this.text, this.nodeTitleMap)
+      .flatMap(event => this.accept(event));
+  }
 }
 
 /** Default execution timeout: 10 minutes */
@@ -493,10 +515,13 @@ export class WorkflowExecutorV2 {
 
     // If no checkpoint nodes, execute the whole plan as one segment
     if (segments.length === 1 && !segments[0]!.checkpointNodeId) {
+      let failed = false;
       for await (const event of this.executeSegment(plan, segments[0]!, organizationId, scopeId, userId, executionId, timeoutMs)) {
         logs.push({ type: event.type, content: event.type === 'log' ? String(event.content ?? '').slice(0, 2000) : undefined, taskId: event.taskId, taskTitle: event.taskTitle, message: event.message, timestamp: new Date().toISOString() });
+        if (event.type === 'error') failed = true;
         yield event;
       }
+      if (failed) return;
       if (executionId) await completeExecution(executionId, true, undefined, logs);
       yield { type: 'done' };
       return;
@@ -507,10 +532,13 @@ export class WorkflowExecutorV2 {
     if (!firstSegment || firstSegment.nodes.length === 0) {
       // First node is a checkpoint — skip straight to creating the checkpoint
     } else {
+      let failed = false;
       for await (const event of this.executeSegment(plan, firstSegment, organizationId, scopeId, userId, executionId, timeoutMs)) {
         logs.push({ type: event.type, content: event.type === 'log' ? String(event.content ?? '').slice(0, 2000) : undefined, taskId: event.taskId, taskTitle: event.taskTitle, message: event.message, timestamp: new Date().toISOString() });
+        if (event.type === 'error') failed = true;
         yield event;
       }
+      if (failed) return;
     }
 
     // If segment 0 has a checkpoint, create it and pause
@@ -664,11 +692,16 @@ export class WorkflowExecutorV2 {
     }
 
     // Execute the segment with resume context
-    yield* this.executeSegment(
+    let failed = false;
+    for await (const event of this.executeSegment(
       plan, segment, execution.organization_id, scopeId, execution.user_id,
       executionId, DEFAULT_TIMEOUT_MS, priorOutputs,
       checkpoint.nodeTitle ? { nodeTitle: checkpoint.nodeTitle, result: checkpoint.result || {} } : undefined,
-    );
+    )) {
+      if (event.type === 'error') failed = true;
+      yield event;
+    }
+    if (failed) return;
 
     // If this segment has a checkpoint, create it and pause again
     if (segment.checkpointNodeId) {
@@ -721,7 +754,7 @@ export class WorkflowExecutorV2 {
 
   /**
    * Execute a single segment of the workflow plan.
-   * This is the core Claude session runner.
+   * This is the core configured-runtime session runner.
    */
   private async *executeSegment(
     plan: WorkflowV2Plan,
@@ -745,7 +778,15 @@ export class WorkflowExecutorV2 {
       return;
     }
 
-    const { workspacePath, sessionId: workspaceSessionId, scopeId: workspaceScopeId, agents, skills, scopeSkillNames } = workspace;
+    const {
+      workspacePath,
+      sessionId: workspaceSessionId,
+      scopeId: workspaceScopeId,
+      agents,
+      skills,
+      scopeSkillNames,
+      scopeSettings,
+    } = workspace;
 
     // Store workspace info in execution record for later retrieval
     if (executionId) {
@@ -770,11 +811,14 @@ export class WorkflowExecutorV2 {
 
     // Create MCP progress server
     const eventQueue: WorkflowProgressEvent[] = [];
+    const progress = new WorkflowProgressAccumulator(nodeTitleMap);
     const progressBridge = await createWorkflowProgressServer(
       workspacePath,
       nodeTitleMap,
       (event) => {
-        eventQueue.push(event);
+        const accepted = progress.accept(event);
+        if (accepted.length === 0) return;
+        eventQueue.push(...accepted);
         if (executionId && event.taskId) {
           const status = event.type === 'step_start' ? 'executing'
             : event.type === 'step_complete' ? 'finish'
@@ -803,12 +847,17 @@ export class WorkflowExecutorV2 {
     // Send the mission brief as the user message as well as persisting it in
     // the runtime-native instruction file.
     const sessionId = crypto.randomUUID();
+    const resolvedModel = await resolveModel(organizationId, {
+      scopeSelection: extractSelection(scopeSettings),
+    });
     const agentConfig: AgentConfig = {
       id: `workflow-v2-${sessionId}`,
       name: 'workflow-executor',
       displayName: `Workflow: ${plan.title}${isResume ? ' (resumed)' : ''}`,
       organizationId,
       systemPrompt: '',
+      model: resolvedModel.modelId,
+      resolvedModel,
       skillIds: [],
       mcpServerIds: [],
     };
@@ -843,13 +892,10 @@ export class WorkflowExecutorV2 {
       );
 
       const startTime = Date.now();
-      // Track which taskIds have already been reported via MCP tool callbacks
-      // to avoid duplicate events when both MCP tools and text markers fire.
-      const reportedByMcp = new Set<string>();
-
       for await (const event of generator) {
         if (Date.now() - startTime > timeoutMs) {
           timedOut = true;
+          await agentRuntime.disconnectSession(workspaceSessionId);
           yield { type: 'error', message: `Workflow execution timed out after ${timeoutMs / 1000}s` };
           break;
         }
@@ -858,35 +904,28 @@ export class WorkflowExecutorV2 {
         // Drain MCP-based events first and track their taskIds
         while (eventQueue.length > 0) {
           const mcpEvent = eventQueue.shift()!;
-          if (mcpEvent.taskId) {
-            reportedByMcp.add(`${mcpEvent.type}:${mcpEvent.taskId}`);
-          }
           yield mcpEvent;
         }
 
         const textContent = this.extractText(event);
         if (textContent) {
-          // Parse text-based progress markers (fallback for AgentCore runtime
-          // where the in-process MCP server cannot be serialized to the container)
-          const markerEvents = this.parseProgressMarkers(textContent, nodeTitleMap);
+          // Parse the accumulated stream so markers split across token deltas
+          // remain detectable. The accumulator also de-duplicates MCP and text.
+          const markerEvents = progress.acceptText(textContent);
           for (const markerEvent of markerEvents) {
-            const key = `${markerEvent.type}:${markerEvent.taskId}`;
-            if (!reportedByMcp.has(key)) {
-              // Update DB status as well
-              if (executionId && markerEvent.taskId) {
-                const status = markerEvent.type === 'step_start' ? 'executing'
-                  : markerEvent.type === 'step_complete' ? 'finish'
-                  : markerEvent.type === 'step_failed' ? 'failed'
-                  : null;
-                if (status) {
-                  updateNodeStatus(executionId, markerEvent.taskId, status, {
-                    output: markerEvent.type === 'step_complete' ? { summary: markerEvent.message } : undefined,
-                    error: markerEvent.type === 'step_failed' ? markerEvent.message : undefined,
-                  });
-                }
+            if (executionId && markerEvent.taskId) {
+              const status = markerEvent.type === 'step_start' ? 'executing'
+                : markerEvent.type === 'step_complete' ? 'finish'
+                : markerEvent.type === 'step_failed' ? 'failed'
+                : null;
+              if (status) {
+                updateNodeStatus(executionId, markerEvent.taskId, status, {
+                  output: markerEvent.type === 'step_complete' ? { summary: markerEvent.message } : undefined,
+                  error: markerEvent.type === 'step_failed' ? markerEvent.message : undefined,
+                });
               }
-              yield markerEvent;
             }
+            yield markerEvent;
           }
 
           yield { type: 'log', content: textContent };
@@ -942,46 +981,53 @@ export class WorkflowExecutorV2 {
     return null;
   }
 
-  /**
-   * Parse text-based progress markers from Claude's output.
-   *
-   * Markers:
-   *   [STEP_START:taskId]
-   *   [STEP_COMPLETE:taskId:summary]
-   *   [STEP_FAILED:taskId:reason]
-   *
-   * This is the fallback mechanism for AgentCore runtime where the in-process
-   * MCP progress server cannot be serialized and sent to the remote container.
-   */
-  private parseProgressMarkers(
-    text: string,
-    nodeTitleMap: Map<string, string>,
-  ): WorkflowProgressEvent[] {
-    const events: WorkflowProgressEvent[] = [];
-    const markerRegex = /\[STEP_(START|COMPLETE|FAILED):([^\]:\s]+)(?::([^\]]*))?\]/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = markerRegex.exec(text)) !== null) {
-      const action = match[1]; // START, COMPLETE, or FAILED
-      const taskId = match[2]!;
-      const detail = match[3]?.trim();
-      const taskTitle = nodeTitleMap.get(taskId);
-
-      switch (action) {
-        case 'START':
-          events.push({ type: 'step_start', taskId, taskTitle });
-          break;
-        case 'COMPLETE':
-          events.push({ type: 'step_complete', taskId, taskTitle, message: detail });
-          break;
-        case 'FAILED':
-          events.push({ type: 'step_failed', taskId, taskTitle, message: detail });
-          break;
-      }
-    }
-
-    return events;
-  }
 }
 
 export const workflowExecutorV2 = new WorkflowExecutorV2();
+
+function isStepEvent(
+  event: WorkflowProgressEvent,
+): event is WorkflowProgressEvent & {
+  type: 'step_start' | 'step_complete' | 'step_failed';
+  taskId: string;
+} {
+  return event.type === 'step_start'
+    || event.type === 'step_complete'
+    || event.type === 'step_failed';
+}
+
+function progressEventKey(
+  event: WorkflowProgressEvent & { taskId: string },
+): string {
+  return `${event.type}:${event.taskId}`;
+}
+
+export function parseProgressMarkers(
+  text: string,
+  nodeTitleMap: Map<string, string>,
+): WorkflowProgressEvent[] {
+  const events: WorkflowProgressEvent[] = [];
+  const markerRegex = /\[STEP_(START|COMPLETE|FAILED):([^\]:\s]+)(?::([^\]]*))?\]/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = markerRegex.exec(text)) !== null) {
+    const action = match[1];
+    const taskId = match[2]!;
+    const detail = match[3]?.trim();
+    const taskTitle = nodeTitleMap.get(taskId);
+
+    switch (action) {
+      case 'START':
+        events.push({ type: 'step_start', taskId, taskTitle });
+        break;
+      case 'COMPLETE':
+        events.push({ type: 'step_complete', taskId, taskTitle, message: detail });
+        break;
+      case 'FAILED':
+        events.push({ type: 'step_failed', taskId, taskTitle, message: detail });
+        break;
+    }
+  }
+
+  return events;
+}

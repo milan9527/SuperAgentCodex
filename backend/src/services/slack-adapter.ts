@@ -102,8 +102,7 @@ export class SlackAdapter implements IMAdapter {
   async sendReply(binding: IMChannelBindingEntity, threadId: string, text: string): Promise<void> {
     const botToken = binding.bot_token_enc;
     if (!botToken) {
-      console.error(`[SLACK] No bot token for binding ${binding.id}`);
-      return;
+      throw new Error(`Slack binding ${binding.id} has no bot token`);
     }
 
     const chunks = this.splitMessage(text, 4000);
@@ -128,13 +127,12 @@ export class SlackAdapter implements IMAdapter {
       });
 
       if (!response.ok) {
-        console.error(`[SLACK] HTTP error: ${response.status} ${await response.text()}`);
-        continue;
+        throw new Error(`[SLACK] HTTP error: ${response.status} ${await response.text()}`);
       }
 
       const result = await response.json() as { ok: boolean; error?: string };
       if (!result.ok) {
-        console.error(`[SLACK] API error: ${result.error}`);
+        throw new Error(`[SLACK] API error: ${result.error}`);
       }
     }
   }

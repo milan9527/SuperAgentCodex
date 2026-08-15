@@ -17,10 +17,30 @@ class MockTransport implements CodexAppServerTransport {
   private notificationsQueue: CodexNotification[];
   private waiting: ((value: IteratorResult<CodexNotification>) => void) | null = null;
   private readonly failResume: boolean;
+  private readonly modelList: Array<{
+    id?: string;
+    model?: string;
+    inputModalities?: string[];
+  }>;
 
-  constructor(notifications: CodexNotification[] = [], options?: { failResume?: boolean }) {
+  constructor(
+    notifications: CodexNotification[] = [],
+    options?: {
+      failResume?: boolean;
+      modelList?: Array<{
+        id?: string;
+        model?: string;
+        inputModalities?: string[];
+      }>;
+    },
+  ) {
     this.notificationsQueue = [...notifications];
     this.failResume = options?.failResume ?? false;
+    this.modelList = options?.modelList ?? [{
+      id: 'gpt-5.6-sol',
+      model: 'gpt-5.6-sol',
+      inputModalities: ['text', 'image'],
+    }];
   }
 
   async start(): Promise<void> {
@@ -39,13 +59,7 @@ class MockTransport implements CodexAppServerTransport {
       } as T;
     }
     if (method === 'model/list') {
-      return {
-        data: [{
-          id: 'openai.gpt-5.6-sol',
-          model: 'openai.gpt-5.6-sol',
-          inputModalities: ['text', 'image'],
-        }],
-      } as T;
+      return { data: this.modelList } as T;
     }
     if (method === 'turn/start') return { turn: { id: 'turn-1' } } as T;
     return {} as T;
@@ -175,9 +189,47 @@ describe('CodexAgentRuntime', () => {
     const transport = new MockTransport();
     const runtime = new CodexAgentRuntime(() => transport);
     const run = (async () => {
+      const events = [];
       for await (const _event of runtime.runConversation({
         agentId: 'agent-1',
         sessionId: 'platform-session',
+        message: 'wait',
+        organizationId: 'org-1',
+        userId: 'user-1',
+        workspacePath: '/tmp/codex-runtime-test',
+      }, agentConfig, [])) {
+        events.push(_event);
+      }
+      return events;
+    })();
+
+    await waitUntil(() => runtime.hasSession('platform-session'));
+    await runtime.disconnectSession('platform-session');
+    const events = await run;
+
+    expect(transport.requests).toContainEqual({
+      method: 'turn/interrupt',
+      params: { threadId: 'thread-new', turnId: 'turn-1' },
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: 'result',
+      status: 'interrupted',
+      providerThreadId: 'thread-new',
+      providerTurnId: 'turn-1',
+    });
+    expect(runtime.activeSessionCount).toBe(0);
+  });
+
+  it('rejects concurrent ownership of the same provider thread', async () => {
+    const firstTransport = new MockTransport();
+    const secondTransport = new MockTransport();
+    const transports = [firstTransport, secondTransport];
+    const runtime = new CodexAgentRuntime(() => transports.shift()!);
+    const firstRun = (async () => {
+      for await (const _event of runtime.runConversation({
+        agentId: 'agent-1',
+        sessionId: 'platform-session-1',
+        providerThreadId: 'thread-existing',
         message: 'wait',
         organizationId: 'org-1',
         userId: 'user-1',
@@ -187,15 +239,27 @@ describe('CodexAgentRuntime', () => {
       }
     })();
 
-    await waitUntil(() => runtime.hasSession('platform-session'));
-    await runtime.disconnectSession('platform-session');
-    await run;
+    await waitUntil(() => runtime.hasSession('thread-existing'));
+    const secondEvents = [];
+    for await (const event of runtime.runConversation({
+      agentId: 'agent-1',
+      sessionId: 'platform-session-2',
+      providerThreadId: 'thread-existing',
+      message: 'also wait',
+      organizationId: 'org-1',
+      userId: 'user-2',
+      workspacePath: '/tmp/codex-runtime-test',
+    }, agentConfig, [])) {
+      secondEvents.push(event);
+    }
 
-    expect(transport.requests).toContainEqual({
-      method: 'turn/interrupt',
-      params: { threadId: 'thread-new', turnId: 'turn-1' },
-    });
-    expect(runtime.activeSessionCount).toBe(0);
+    expect(secondEvents).toEqual([expect.objectContaining({
+      type: 'error',
+      code: 'CODEX_SESSION_BUSY',
+    })]);
+    expect(secondTransport.started).toBe(false);
+    await runtime.disconnectSession('platform-session-1');
+    await firstRun;
   });
 
   it('starts a replacement thread with bounded platform history when resume fails', async () => {
@@ -283,6 +347,74 @@ describe('CodexAgentRuntime', () => {
         ],
       },
     });
+  });
+
+  it('rejects image input when the catalog explicitly marks the model as text-only', async () => {
+    const workspacePath = join(tmpdir(), `codex-image-test-${randomUUID()}`);
+    await mkdir(workspacePath, { recursive: true });
+    await writeFile(join(workspacePath, 'evidence.png'), Buffer.from([137, 80, 78, 71]));
+    const transport = new MockTransport([], {
+      modelList: [{
+        id: 'gpt-5.6-sol',
+        model: 'gpt-5.6-sol',
+        inputModalities: ['text'],
+      }],
+    });
+    const runtime = new CodexAgentRuntime(() => transport);
+    const events = [];
+
+    try {
+      for await (const event of runtime.runConversation({
+        agentId: 'agent-1',
+        sessionId: 'platform-session',
+        message: 'inspect this image',
+        imagePaths: ['evidence.png'],
+        organizationId: 'org-1',
+        userId: 'user-1',
+        workspacePath,
+      }, agentConfig, [])) {
+        events.push(event);
+      }
+    } finally {
+      await rm(workspacePath, { recursive: true, force: true });
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'error',
+      code: 'AGENT_IMAGE_UNSUPPORTED',
+    });
+    expect(transport.requests.map(request => request.method)).not.toContain('turn/start');
+  });
+
+  it('rejects image input when model capability metadata is unavailable', async () => {
+    const workspacePath = join(tmpdir(), `codex-image-test-${randomUUID()}`);
+    await mkdir(workspacePath, { recursive: true });
+    await writeFile(join(workspacePath, 'evidence.png'), Buffer.from([137, 80, 78, 71]));
+    const transport = new MockTransport([], { modelList: [] });
+    const runtime = new CodexAgentRuntime(() => transport);
+    const events = [];
+
+    try {
+      for await (const event of runtime.runConversation({
+        agentId: 'agent-1',
+        sessionId: 'platform-session',
+        message: 'inspect this image',
+        imagePaths: ['evidence.png'],
+        organizationId: 'org-1',
+        userId: 'user-1',
+        workspacePath,
+      }, agentConfig, [])) {
+        events.push(event);
+      }
+    } finally {
+      await rm(workspacePath, { recursive: true, force: true });
+    }
+
+    expect(events.at(-1)).toMatchObject({
+      type: 'error',
+      code: 'CODEX_MODEL_CAPABILITY_UNKNOWN',
+    });
+    expect(transport.requests.map(request => request.method)).not.toContain('turn/start');
   });
 
   it('passes serializable stdio MCP servers through thread config', async () => {

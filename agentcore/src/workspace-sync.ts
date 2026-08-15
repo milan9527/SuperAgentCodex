@@ -46,6 +46,7 @@ export async function restoreWorkspaceFromS3(
   prefix: string,
   workspaceDir = WORKSPACE_DIR,
 ): Promise<number> {
+  clearWorkspace(workspaceDir);
   const keys = await listKeys(s3, bucket, prefix);
   const remoteRelativePaths = new Set(
     keys
@@ -61,6 +62,7 @@ export async function restoreWorkspaceFromS3(
     }
   }
   let restored = 0;
+  const failures: string[] = [];
   for (const key of keys) {
     const relativePath = key.slice(prefix.length);
     if (!isSafeWorkspacePath(relativePath) || relativePath === '__diff__.json') continue;
@@ -74,10 +76,21 @@ export async function restoreWorkspaceFromS3(
       }
     } catch (error) {
       console.warn(`[workspace-sync] Failed to restore ${relativePath}:`, error);
+      failures.push(relativePath);
     }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Workspace restore failed for ${failures.join(', ')}`);
   }
   console.log(`[workspace-sync] Restored ${restored}/${keys.length} files`);
   return restored;
+}
+
+export function clearWorkspace(workspaceDir = WORKSPACE_DIR): void {
+  fs.mkdirSync(workspaceDir, { recursive: true });
+  for (const entry of fs.readdirSync(workspaceDir)) {
+    fs.rmSync(path.join(workspaceDir, entry), { recursive: true, force: true });
+  }
 }
 
 /**
@@ -97,6 +110,7 @@ export async function syncWorkspaceToS3(
     localFiles.map(filePath => path.relative(workspaceDir, filePath)),
   );
   let uploaded = 0;
+  const failures: string[] = [];
 
   for (const filePath of localFiles) {
     const relativePath = path.relative(workspaceDir, filePath);
@@ -111,6 +125,7 @@ export async function syncWorkspaceToS3(
       uploaded++;
     } catch (error) {
       console.warn(`[workspace-sync] Upload failed for ${relativePath}:`, error);
+      failures.push(`upload:${relativePath}`);
     }
   }
 
@@ -134,7 +149,12 @@ export async function syncWorkspaceToS3(
     deleted += batch.length - (result.Errors?.length ?? 0);
     for (const error of result.Errors ?? []) {
       console.warn(`[workspace-sync] Delete failed for ${error.Key}: ${error.Message}`);
+      failures.push(`delete:${error.Key ?? 'unknown'}`);
     }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Workspace mirror failed for ${failures.join(', ')}`);
   }
 
   console.log(

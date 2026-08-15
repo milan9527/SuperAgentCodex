@@ -10,6 +10,7 @@ import { credentialVaultService } from './credential-vault.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { CreateModelProviderInput, UpdateModelProviderInput } from '../schemas/model-provider.schema.js';
 import { config } from '../config/index.js';
+import { isCodexBedrockModel } from './model-resolver.js';
 
 /** Safe (api-facing) view of a provider — never includes the api_key. */
 export interface SafeModelProvider {
@@ -18,55 +19,99 @@ export interface SafeModelProvider {
   type: string;
   baseUrl: string | null;
   defaultModelId: string | null;
+  allowedModelIds: string[];
+  runtimeCompatibleModelIds: string[];
   isOrgDefault: boolean;
   hasApiKey: boolean;
   status: string;
   enabled: boolean;
   runtimeCompatible: boolean;
   runtimeCompatibilityReason: string | null;
+  runtimeTarget: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 function toSafe(row: ModelProviderEntity): SafeModelProvider {
   const runtimeCompatibility = getRuntimeCompatibility(row);
+  const allowedModelIds = getAllowedModelIds(row);
+  const runtimeCompatibleModelIds = getRuntimeCompatibleModelIds(row);
   return {
     id: row.id,
     name: row.name,
     type: row.type,
     baseUrl: row.base_url,
     defaultModelId: row.default_model_id,
+    allowedModelIds,
+    runtimeCompatibleModelIds,
     isOrgDefault: row.is_org_default,
     hasApiKey: !!row.credential_id,
     status: row.status,
     enabled: row.status !== 'disabled',
     runtimeCompatible: runtimeCompatibility.compatible,
     runtimeCompatibilityReason: runtimeCompatibility.reason,
+    runtimeTarget: runtimeCompatibility.target,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function getRuntimeCompatibility(
-  row: ModelProviderEntity
-): { compatible: boolean; reason: string | null } {
-  if (config.agentRuntime !== 'codex' && config.agentRuntime !== 'agentcore') {
-    return { compatible: true, reason: null };
+export function getAllowedModelIds(
+  row: Pick<ModelProviderEntity, 'allowed_model_ids' | 'default_model_id'>,
+): string[] {
+  const configured = row.allowed_model_ids?.length
+    ? row.allowed_model_ids
+    : row.default_model_id
+      ? [row.default_model_id]
+      : [];
+  return [...new Set(configured.map(modelId => modelId.trim()).filter(Boolean))];
+}
+
+export function getRuntimeCompatibleModelIds(
+  row: Pick<ModelProviderEntity, 'type' | 'default_model_id' | 'allowed_model_ids'>,
+  agentRuntime = config.agentRuntime,
+): string[] {
+  const allowed = getAllowedModelIds(row);
+  if (agentRuntime !== 'codex' && agentRuntime !== 'agentcore') return allowed;
+  if (row.type === 'litellm') return allowed;
+  return allowed.filter(modelId => isCodexBedrockModel(modelId));
+}
+
+export function getRuntimeCompatibility(
+  row: Pick<ModelProviderEntity, 'type' | 'default_model_id' | 'allowed_model_ids'>,
+  agentRuntime = config.agentRuntime,
+): { compatible: boolean; reason: string | null; target: string | null } {
+  const compatibleModels = getRuntimeCompatibleModelIds(row, agentRuntime);
+  if (agentRuntime !== 'codex' && agentRuntime !== 'agentcore') {
+    return compatibleModels.length > 0
+      ? { compatible: true, reason: null, target: agentRuntime }
+      : { compatible: false, reason: 'No models are enabled for this provider', target: null };
   }
-  if (row.type !== 'bedrock') {
-    return {
-      compatible: false,
-      reason: 'Codex runtimes do not support the platform LiteLLM provider contract',
-    };
+  if (row.type === 'litellm') {
+    return compatibleModels.length > 0
+      ? { compatible: true, reason: null, target: 'claude' }
+      : { compatible: false, reason: 'No models are enabled for this provider', target: null };
   }
-  const model = row.default_model_id;
-  if (!model || !model.startsWith('openai.gpt-5')) {
-    return {
-      compatible: false,
-      reason: 'Codex on Amazon Bedrock requires a Mantle Responses model (openai.gpt-5*)',
-    };
+  if (compatibleModels.length > 0) {
+    return { compatible: true, reason: null, target: agentRuntime };
   }
-  return { compatible: true, reason: null };
+  return {
+    compatible: false,
+    reason: row.default_model_id
+      ? 'Codex on Amazon Bedrock requires an OpenAI Responses model; use LiteLLM for Claude models'
+      : 'Configure an OpenAI Responses model, or use a LiteLLM provider for Claude',
+    target: null,
+  };
+}
+
+function normalizeAllowedModelIds(modelIds: string[] | undefined): string[] {
+  return [...new Set((modelIds ?? []).map(modelId => modelId.trim()).filter(Boolean))];
+}
+
+function validateDefaultModel(defaultModelId: string | null, allowedModelIds: string[]): void {
+  if (defaultModelId && !allowedModelIds.includes(defaultModelId)) {
+    throw AppError.validation('The default model must be included in the allowed model list');
+  }
 }
 
 /** Credential vault entries backing a litellm provider use this auth_type. */
@@ -117,13 +162,30 @@ export class ModelProviderService {
       await modelProviderRepository.clearOrgDefault(organizationId);
     }
 
+    const defaultModelId = input.default_model_id?.trim() || null;
+    const allowedModelIds = normalizeAllowedModelIds(
+      input.allowed_model_ids ?? (defaultModelId ? [defaultModelId] : []),
+    );
+    validateDefaultModel(defaultModelId, allowedModelIds);
+    if (input.is_org_default) {
+      const candidate = {
+        type: input.type,
+        default_model_id: defaultModelId,
+        allowed_model_ids: allowedModelIds,
+      };
+      if (!getRuntimeCompatibility(candidate).compatible) {
+        throw AppError.validation('The organization default provider must have at least one runtime-compatible model');
+      }
+    }
+
     const row = await modelProviderRepository.create({
       organization_id: organizationId,
       name: input.name,
       type: input.type,
       base_url: input.base_url ?? null,
       credential_id: credentialId,
-      default_model_id: input.default_model_id ?? null,
+      default_model_id: defaultModelId,
+      allowed_model_ids: allowedModelIds,
       is_org_default: input.is_org_default ?? false,
       status: 'active',
       created_by: createdBy ?? null,
@@ -143,7 +205,27 @@ export class ModelProviderService {
     const data: Partial<ModelProviderEntity> = {};
     if (input.name !== undefined) data.name = input.name;
     if (input.base_url !== undefined) data.base_url = input.base_url ?? null;
-    if (input.default_model_id !== undefined) data.default_model_id = input.default_model_id ?? null;
+    const effectiveDefaultModelId =
+      input.default_model_id !== undefined
+        ? input.default_model_id?.trim() || null
+        : existing.default_model_id;
+    let effectiveAllowedModelIds =
+      input.allowed_model_ids !== undefined
+        ? normalizeAllowedModelIds(input.allowed_model_ids)
+        : getAllowedModelIds(existing);
+    if (
+      input.default_model_id !== undefined &&
+      input.allowed_model_ids === undefined &&
+      effectiveDefaultModelId &&
+      !effectiveAllowedModelIds.includes(effectiveDefaultModelId)
+    ) {
+      effectiveAllowedModelIds = [...effectiveAllowedModelIds, effectiveDefaultModelId];
+    }
+    validateDefaultModel(effectiveDefaultModelId, effectiveAllowedModelIds);
+    if (input.default_model_id !== undefined) data.default_model_id = effectiveDefaultModelId;
+    if (input.allowed_model_ids !== undefined || input.default_model_id !== undefined) {
+      data.allowed_model_ids = effectiveAllowedModelIds;
+    }
 
     // Rotate the api_key (write-only): create the vault entry if missing, else update it.
     if (input.api_key) {
@@ -164,6 +246,15 @@ export class ModelProviderService {
     }
 
     if (input.is_org_default === true) {
+      const candidate = {
+        ...existing,
+        ...data,
+        default_model_id: effectiveDefaultModelId,
+        allowed_model_ids: effectiveAllowedModelIds,
+      };
+      if (!getRuntimeCompatibility(candidate).compatible) {
+        throw AppError.validation('The organization default provider must have at least one runtime-compatible model');
+      }
       await modelProviderRepository.clearOrgDefault(organizationId);
       data.is_org_default = true;
     } else if (input.is_org_default === false) {
@@ -216,6 +307,9 @@ export class ModelProviderService {
   async setDefault(id: string, organizationId: string): Promise<SafeModelProvider> {
     const existing = await modelProviderRepository.findById(id, organizationId);
     if (!existing) throw AppError.notFound(`Model provider ${id} not found`);
+    if (!getRuntimeCompatibility(existing).compatible) {
+      throw AppError.validation('The organization default provider must have at least one runtime-compatible model');
+    }
     await modelProviderRepository.clearOrgDefault(organizationId);
     const updated = await modelProviderRepository.update(id, organizationId, { is_org_default: true });
     if (!updated) throw AppError.notFound(`Model provider ${id} not found`);

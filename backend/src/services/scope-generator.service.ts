@@ -425,6 +425,10 @@ export class ScopeGeneratorService {
           agentConfig,
           [], // no skills needed for generation
         )) {
+          if (event.type === 'error') {
+            yield event;
+            return;
+          }
           // Collect text and tool_use content for fallback extraction
           if ((event.type === 'assistant' || event.type === 'result') && event.content) {
             for (const block of event.content) {
@@ -699,6 +703,10 @@ QUALITY CHECK — before outputting, verify:
         agentConfig,
         [],
       )) {
+        if (event.type === 'error') {
+          yield event;
+          return;
+        }
         // Collect text blocks for JSON extraction
         if ((event.type === 'assistant' || event.type === 'result') && event.content) {
           for (const block of event.content) {

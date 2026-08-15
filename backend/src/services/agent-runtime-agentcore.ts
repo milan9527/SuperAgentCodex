@@ -28,8 +28,8 @@ import {
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { createReadStream, statSync, createWriteStream } from 'fs';
-import { readdir, mkdir, rm } from 'fs/promises';
-import { join, relative, dirname } from 'path';
+import { readdir, mkdir, rm, lstat } from 'fs/promises';
+import { join, relative, dirname, resolve, sep } from 'path';
 import { pipeline } from 'stream/promises';
 
 interface AgentCoreEvent {
@@ -76,6 +76,12 @@ interface AgentCoreRuntimeDependencies {
   s3Client?: S3Client;
   runtimeArn?: string;
   workspaceBucket?: string;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isPersistedChatSessionId(sessionId: string | undefined): sessionId is string {
+  return typeof sessionId === 'string' && UUID_PATTERN.test(sessionId);
 }
 
 export class AgentCoreAgentRuntime implements AgentRuntime {
@@ -170,6 +176,8 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
     }
 
     const payload = JSON.stringify({
+      protocol_version: 2,
+      runtime: 'codex',
       prompt: options.message,
       provider_thread_id: options.providerThreadId ?? options.providerSessionId ?? undefined,
       chat_session_id: chatSessionId ?? undefined,
@@ -218,6 +226,8 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
     const MAX_RETRIES = 3;
     const RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
     const RETRYABLE_STATUS_CODES = new Set([424, 502, 503, 504]);
+    let terminalEvent: ConversationEvent | undefined;
+    let postProcessingError: Error | undefined;
     try {
       let response: any;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -229,19 +239,19 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
           break;
         } catch (error: any) {
           if (invocation.controller.signal.aborted) {
-            yield {
+            terminalEvent = {
               type: 'result',
               provider: 'agentcore',
               status: 'interrupted',
               providerThreadId: options.providerThreadId,
               numTurns: 0,
             };
-            return;
+            break;
           }
           const statusCode = error?.$metadata?.httpStatusCode;
           const retryable = RETRYABLE_STATUS_CODES.has(statusCode);
           if (!retryable || attempt === MAX_RETRIES) {
-            yield {
+            terminalEvent = {
               type: 'error',
               provider: 'agentcore',
               status: 'failed',
@@ -253,7 +263,7 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
                 ? 'The runtime may be cold-starting; retry in a moment'
                 : 'Check AGENTCORE_RUNTIME_ARN and IAM permissions',
             };
-            return;
+            break;
           }
           await new Promise(resolve => setTimeout(
             resolve,
@@ -262,42 +272,78 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
         }
       }
 
-      if (!response) return;
-      const contentType: string = response.contentType ?? '';
-      if (contentType.includes('text/event-stream')) {
-        for await (const event of this.parseSSEStream(response.response)) {
-          this.trackProviderAlias(invocation, event.providerThreadId ?? event.sessionId);
-          yield event;
-        }
-      } else {
-        const body = await this.readBody(response.response);
-        try {
-          const event = this.mapEvent(JSON.parse(body));
-          this.trackProviderAlias(invocation, event.providerThreadId ?? event.sessionId);
-          yield event;
-        } catch {
-          yield {
-            type: 'error',
-            provider: 'agentcore',
-            status: 'failed',
-            code: 'PARSE_ERROR',
-            message: `Failed to parse response: ${body.slice(0, 200)}`,
-          };
+      if (response) {
+        const contentType: string = response.contentType ?? '';
+        if (contentType.includes('text/event-stream')) {
+          for await (const event of this.parseSSEStream(response.response)) {
+            this.trackProviderAlias(invocation, event.providerThreadId ?? event.sessionId);
+            if (event.type === 'result' || event.type === 'error') {
+              terminalEvent = event;
+            } else {
+              yield event;
+            }
+          }
+        } else {
+          const body = await this.readBody(response.response);
+          try {
+            const event = this.mapEvent(JSON.parse(body));
+            this.trackProviderAlias(invocation, event.providerThreadId ?? event.sessionId);
+            if (event.type === 'result' || event.type === 'error') {
+              terminalEvent = event;
+            } else {
+              yield event;
+            }
+          } catch {
+            terminalEvent = {
+              type: 'error',
+              provider: 'agentcore',
+              status: 'failed',
+              code: 'PARSE_ERROR',
+              message: `Failed to parse response: ${body.slice(0, 200)}`,
+            };
+          }
         }
       }
     } finally {
       this.untrackInvocation(invocation);
       if (options.workspacePath && chatSessionId) {
-        await this.syncBackFromS3(s3Prefix, options.workspacePath);
-        if (scopeId !== 'default') {
-          await this.carryForward(
-            options.organizationId,
-            scopeId,
-            chatSessionId,
-          );
+        try {
+          await this.syncBackFromS3(s3Prefix, options.workspacePath);
+          if (scopeId !== 'default') {
+            await this.carryForward(
+              options.organizationId,
+              scopeId,
+              chatSessionId,
+            );
+          }
+        } catch (error) {
+          postProcessingError = error instanceof Error ? error : new Error(String(error));
         }
       }
     }
+
+    if (postProcessingError) {
+      yield {
+        type: 'error',
+        provider: 'agentcore',
+        status: 'failed',
+        code: 'AGENTCORE_WORKSPACE_FINALIZE_FAILED',
+        message: postProcessingError.message,
+        suggestedAction: 'Retry after checking workspace S3 and carry-forward access',
+      };
+      return;
+    }
+    if (terminalEvent) {
+      yield terminalEvent;
+      return;
+    }
+    yield {
+      type: 'error',
+      provider: 'agentcore',
+      status: 'failed',
+      code: 'AGENTCORE_MISSING_TERMINAL_EVENT',
+      message: 'AgentCore response ended without a terminal result',
+    };
   }
 
   async disconnectSession(sessionId: string): Promise<void> {
@@ -373,31 +419,24 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
     scopeId: string,
     sessionId: string
   ): Promise<void> {
-    try {
-      const { carryForwardService } = await import('./carry-forward.service.js');
-      const result = await carryForwardService.syncFromSession(
-        organizationId,
-        scopeId,
-        sessionId
-      );
-      if (
-        result.skills.length > 0
-        || result.agents.length > 0
-        || result.claudeMdUpdated
-        || result.settingsUpdated
-        || result.hooksUpdated
-        || result.systemPromptUpdated
-      ) {
-        console.log(
-          `[agentcore-runtime] Carry-forward complete: `
-          + `skills=${result.skills.join(',')}, agents=${result.agents.join(',')}, `
-          + `systemPrompt=${result.systemPromptUpdated}`
-        );
-      }
-    } catch (error) {
-      console.warn(
-        '[agentcore-runtime] Carry-forward failed:',
-        error instanceof Error ? error.message : error
+    const { carryForwardService } = await import('./carry-forward.service.js');
+    const result = await carryForwardService.syncFromSession(
+      organizationId,
+      scopeId,
+      sessionId
+    );
+    if (
+      result.skills.length > 0
+      || result.agents.length > 0
+      || result.claudeMdUpdated
+      || result.settingsUpdated
+      || result.hooksUpdated
+      || result.systemPromptUpdated
+    ) {
+      console.log(
+        `[agentcore-runtime] Carry-forward complete: `
+        + `skills=${result.skills.join(',')}, agents=${result.agents.join(',')}, `
+        + `systemPrompt=${result.systemPromptUpdated}`
       );
     }
   }
@@ -425,7 +464,10 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
     organizationId: string,
     sessionId?: string
   ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
-    if (!sessionId) return [];
+    // Scope generation, skill scanning, workflow generation, and similar
+    // system consumers use descriptive ephemeral IDs. The chat table stores
+    // UUIDs, so querying those IDs would only create a noisy PostgreSQL error.
+    if (!isPersistedChatSessionId(sessionId)) return [];
     try {
       const { prisma } = await import('../config/database.js');
       // Load recent messages, excluding the very latest user message
@@ -522,20 +564,7 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
         if (entry.isDirectory()) {
           await walk(fullPath);
         } else if (entry.isSymbolicLink()) {
-          try {
-            const linkStat = statSync(fullPath);
-            if (linkStat.isDirectory()) {
-              await walk(fullPath);
-            } else if (linkStat.isFile() && linkStat.size <= 100 * 1024 * 1024) {
-              filesToUpload.push({
-                fullPath,
-                relPath: relative(localDir, fullPath),
-                size: linkStat.size,
-              });
-            }
-          } catch {
-            /* Broken symlink — skip */
-          }
+          console.warn(`[agentcore-runtime] Skipping workspace symlink: ${relative(localDir, fullPath)}`);
         } else {
           try {
             const fileStat = statSync(fullPath);
@@ -573,7 +602,9 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
       );
       for (const r of results) {
         if (r.status === 'fulfilled') count++;
-        else console.warn(`[agentcore-runtime] Upload failed:`, r.reason);
+        else throw new Error(
+          `Workspace upload failed: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`
+        );
       }
     }
 
@@ -602,13 +633,18 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
 
     for (let i = 0; i < staleKeys.length; i += 1_000) {
       const batch = staleKeys.slice(i, i + 1_000);
-      await this.s3Client.send(new DeleteObjectsCommand({
+      const result = await this.s3Client.send(new DeleteObjectsCommand({
         Bucket: this.workspaceBucket,
         Delete: {
           Quiet: true,
           Objects: batch.map(Key => ({ Key })),
         },
       }));
+      if (result.Errors?.length) {
+        throw new Error(
+          `Workspace deletion failed: ${result.Errors.map(error => error.Key ?? 'unknown').join(', ')}`
+        );
+      }
     }
 
     return count;
@@ -673,18 +709,8 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
         if (SKIP_SEGMENTS.has(firstSegment!)) continue;
         remotePaths.add(relativePath);
 
-        const localPath = join(localDir, relativePath);
-        const localDirPath = dirname(localPath);
-
         try {
-          await mkdir(localDirPath, { recursive: true });
-          // Skip if localPath is already a directory
-          try {
-            const s = await import('fs/promises').then((m) => m.stat(localPath));
-            if (s.isDirectory()) continue;
-          } catch {
-            /* doesn't exist yet, fine */
-          }
+          const localPath = await this.prepareWorkspaceDestination(localDir, relativePath);
           const response = await this.s3Client.send(
             new GetObjectCommand({
               Bucket: this.workspaceBucket,
@@ -696,10 +722,9 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
             downloaded++;
           }
         } catch (err) {
-          // Non-critical — local workspace is a cache
-          console.warn(
-            `[agentcore-runtime] syncBack failed for ${relativePath}:`,
-            err instanceof Error ? err.message : err
+          throw new Error(
+            `Workspace sync-back failed for ${relativePath}: `
+            + `${err instanceof Error ? err.message : String(err)}`
           );
         }
       }
@@ -733,6 +758,42 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
       console.log(`[agentcore-runtime] Synced back ${downloaded} files from S3 to local`);
     }
     return downloaded;
+  }
+
+  private async prepareWorkspaceDestination(
+    workspaceRoot: string,
+    relativePath: string
+  ): Promise<string> {
+    const root = resolve(workspaceRoot);
+    const candidate = resolve(root, relativePath);
+    if (candidate === root || !candidate.startsWith(`${root}${sep}`)) {
+      throw new Error(`Unsafe workspace path: ${relativePath}`);
+    }
+
+    const parentRelative = relative(root, dirname(candidate));
+    let current = root;
+    for (const segment of parentRelative.split(sep).filter(Boolean)) {
+      current = join(current, segment);
+      try {
+        const entry = await lstat(current);
+        if (entry.isSymbolicLink() || !entry.isDirectory()) {
+          throw new Error(`Unsafe workspace parent: ${relative(root, current)}`);
+        }
+      } catch (error: any) {
+        if (error?.code !== 'ENOENT') throw error;
+        await mkdir(current);
+      }
+    }
+
+    try {
+      const entry = await lstat(candidate);
+      if (entry.isSymbolicLink() || entry.isDirectory()) {
+        throw new Error(`Unsafe workspace destination: ${relativePath}`);
+      }
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    return candidate;
   }
 
   private async *parseSSEStream(stream: any): AsyncGenerator<ConversationEvent> {
@@ -806,7 +867,9 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
               outputTokens: tu.output_tokens ?? 0,
               cacheReadInputTokens: tu.cache_read_input_tokens ?? 0,
               cacheCreationInputTokens: tu.cache_creation_input_tokens ?? 0,
-              totalCostUsd: tu.total_cost_usd ?? 0,
+              ...(tu.total_cost_usd !== undefined
+                ? { totalCostUsd: tu.total_cost_usd }
+                : {}),
             }
           : undefined;
         return {

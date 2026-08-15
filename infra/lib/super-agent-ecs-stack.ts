@@ -61,19 +61,6 @@ export class SuperAgentEcsStack extends cdk.Stack {
       description: 'CIDR allowed to access ALB HTTP/HTTPS',
     });
 
-    // Cognito parameters (only used when authMode=cognito)
-    const adminEmail = new cdk.CfnParameter(this, 'AdminEmail', {
-      type: 'String',
-      default: 'admin@example.com',
-      description: 'Initial admin email (Cognito mode only)',
-    });
-
-    const cognitoDomainPrefix = new cdk.CfnParameter(this, 'CognitoDomainPrefix', {
-      type: 'String',
-      default: 'super-agent-unused',
-      description: 'Cognito domain prefix (Cognito mode only)',
-    });
-
     // =========================================================================
     // VPC
     // =========================================================================
@@ -158,6 +145,22 @@ export class SuperAgentEcsStack extends cdk.Stack {
       cacheSubnetGroupName: `${id}-redis-subnets`.toLowerCase(),
     });
 
+    const redisMajorVersion = Number.parseInt(redisEngineVersion.split('.')[0]!, 10);
+    const redisParameterGroupFamily = redisMajorVersion >= 7
+      ? `redis${redisMajorVersion}`
+      : `redis${redisMajorVersion}.x`;
+    const redisParameterGroup = new cdk.aws_elasticache.CfnParameterGroup(
+      this,
+      'RedisParameterGroup',
+      {
+        cacheParameterGroupFamily: redisParameterGroupFamily,
+        description: 'Super Agent Redis parameters for durable BullMQ queues',
+        properties: {
+          'maxmemory-policy': 'noeviction',
+        },
+      },
+    );
+
     const redisCluster = new cdk.aws_elasticache.CfnCacheCluster(this, 'RedisCluster', {
       engine: 'redis',
       cacheNodeType: 'cache.t4g.micro',
@@ -165,10 +168,12 @@ export class SuperAgentEcsStack extends cdk.Stack {
       clusterName: `${id}-redis`.toLowerCase(),
       vpcSecurityGroupIds: [redisSg.securityGroupId],
       cacheSubnetGroupName: redisSubnetGroup.cacheSubnetGroupName,
+      cacheParameterGroupName: redisParameterGroup.ref,
       engineVersion: redisEngineVersion,
       port: 6379,
     });
-    redisCluster.addDependency(redisSubnetGroup);
+    redisCluster.addResourceDependency(redisSubnetGroup);
+    redisCluster.addResourceDependency(redisParameterGroup);
 
     // =========================================================================
     // S3 Buckets
@@ -229,6 +234,17 @@ export class SuperAgentEcsStack extends cdk.Stack {
         'bedrock:InvokeModelWithResponseStream',
         'bedrock:ListInferenceProfiles',
         'bedrock:ListFoundationModels',
+        'bedrock-mantle:CreateInference',
+      ],
+      resources: ['*'],
+    }));
+
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'ssmmessages:CreateControlChannel',
+        'ssmmessages:CreateDataChannel',
+        'ssmmessages:OpenControlChannel',
+        'ssmmessages:OpenDataChannel',
       ],
       resources: ['*'],
     }));
@@ -270,7 +286,7 @@ export class SuperAgentEcsStack extends cdk.Stack {
     const cluster = new ecs.Cluster(this, 'EcsCluster', {
       vpc,
       clusterName: `${id}-cluster`.toLowerCase(),
-      containerInsights: true,
+      containerInsightsV2: ecs.ContainerInsights.ENHANCED,
     });
 
     // CloudWatch log group for backend container
@@ -362,6 +378,8 @@ export class SuperAgentEcsStack extends cdk.Stack {
       serviceName: `${id}-backend-svc`.toLowerCase(),
       circuitBreaker: { rollback: true },
       enableExecuteCommand: true, // Allows `aws ecs execute-command` for debugging
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
     });
 
     service.attachToApplicationTargetGroup(targetGroup);
@@ -374,6 +392,16 @@ export class SuperAgentEcsStack extends cdk.Stack {
     let cognitoDomainFull: string | undefined;
 
     if (authMode === 'cognito') {
+      const adminEmail = new cdk.CfnParameter(this, 'AdminEmail', {
+        type: 'String',
+        default: 'admin@example.com',
+        description: 'Initial admin email',
+      });
+      const cognitoDomainPrefix = new cdk.CfnParameter(this, 'CognitoDomainPrefix', {
+        type: 'String',
+        default: `${id.toLowerCase()}-auth`,
+        description: 'Cognito hosted UI domain prefix',
+      });
       userPool = new cognito.UserPool(this, 'SuperAgentUserPool', {
         userPoolName: 'super-agent-users',
         selfSignUpEnabled: false,

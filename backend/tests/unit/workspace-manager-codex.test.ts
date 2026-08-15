@@ -9,9 +9,13 @@ import {
   type ScopeForWorkspace,
 } from '../../src/services/workspace-manager.js';
 
+const { findMemoriesForContext } = vi.hoisted(() => ({
+  findMemoriesForContext: vi.fn(),
+}));
+
 vi.mock('../../src/repositories/scope-memory.repository.js', () => ({
   scopeMemoryRepository: {
-    findForContext: vi.fn().mockResolvedValue([]),
+    findForContext: findMemoriesForContext,
   },
 }));
 
@@ -20,6 +24,7 @@ describe('WorkspaceManager Codex layout', () => {
   let manager: WorkspaceManager;
 
   beforeEach(async () => {
+    findMemoriesForContext.mockResolvedValue([]);
     baseDir = join(tmpdir(), `workspace-manager-codex-${randomUUID()}`);
     await mkdir(baseDir, { recursive: true });
     manager = new WorkspaceManager(baseDir, { send: async () => ({}) } as never, 'codex');
@@ -82,7 +87,13 @@ describe('WorkspaceManager Codex layout', () => {
       name: 'risk-reviewer',
       displayName: 'Risk Reviewer',
       role: 'Review operational risk',
-      systemPrompt: 'Review evidence before drawing conclusions.',
+      systemPrompt: [
+        'Review evidence before drawing conclusions.',
+        '',
+        'Relevant project skills are available under .agents/skills: analyze.',
+        '',
+        'Relevant project skills are available under .agents/skills: analyze.',
+      ].join('\n'),
       skillNames: ['analyze'],
     }];
     const scope: ScopeForWorkspace = {
@@ -115,10 +126,17 @@ describe('WorkspaceManager Codex layout', () => {
     expect(agentConfig).toContain('name = "risk-reviewer"');
     expect(agentConfig).toContain('description = "Risk Reviewer - Review operational risk"');
     expect(agentConfig).toContain('developer_instructions = """');
+    expect(
+      agentConfig.match(/Relevant project skills are available under \.agents\/skills:/g),
+    ).toHaveLength(1);
 
     const projectConfig = await readFile(join(workspacePath, '.codex', 'config.toml'), 'utf-8');
     expect(projectConfig).toContain('approval_policy = "never"');
     expect(projectConfig).toContain('sandbox_mode = "workspace-write"');
+    expect(projectConfig).toContain('[sandbox_workspace_write]');
+    expect(projectConfig).toContain('network_access = false');
+    expect(projectConfig).toContain('exclude_slash_tmp = true');
+    expect(projectConfig).toContain('exclude_tmpdir_env_var = true');
     expect(projectConfig).toContain('[features]');
     expect(projectConfig).toContain('hooks = true');
     expect(projectConfig).toContain('[agents."risk-reviewer"]');
@@ -137,6 +155,73 @@ describe('WorkspaceManager Codex layout', () => {
     await expect(access(join(workspacePath, '.claude'))).rejects.toThrow();
   });
 
+  it('does not reference missing memory files and removes stale memory directories', async () => {
+    const workspacePath = join(baseDir, 'memory-free-workspace');
+    await mkdir(join(workspacePath, 'memories'), { recursive: true });
+    await writeFile(
+      join(workspacePath, 'memories', 'lessons.md'),
+      '# Stale lesson\n',
+      'utf-8',
+    );
+    const scope: ScopeForWorkspace = {
+      id: 'scope-no-memory',
+      name: 'Empty Memory Scope',
+      description: null,
+      systemPrompt: null,
+      configVersion: 1,
+      agents: [],
+      skills: [],
+    };
+
+    await manager.generateScopeInstructions(workspacePath, scope, null);
+    await manager.writeMemoryFiles(workspacePath, scope.id);
+
+    const instructions = await readFile(join(workspacePath, 'AGENTS.md'), 'utf-8');
+    expect(instructions).not.toContain('memories/lessons.md');
+    expect(instructions).not.toContain('## Memory');
+    await expect(access(join(workspacePath, 'memories'))).rejects.toThrow();
+  });
+
+  it('references lessons only when a lesson file is generated', async () => {
+    findMemoriesForContext.mockResolvedValue([{
+      id: 'memory-1',
+      organization_id: 'org-1',
+      business_scope_id: 'scope-with-memory',
+      session_id: null,
+      created_by: 'user-1',
+      visibility: 'scope',
+      category: 'lesson',
+      title: 'Verify generated files',
+      content: 'Check that a referenced file exists before reading it.',
+      tags: [],
+      is_pinned: false,
+      source: 'human',
+      created_at: new Date('2026-08-14T00:00:00Z'),
+      updated_at: new Date('2026-08-14T00:00:00Z'),
+    }]);
+    const workspacePath = join(baseDir, 'memory-workspace');
+    await mkdir(workspacePath, { recursive: true });
+    const scope: ScopeForWorkspace = {
+      id: 'scope-with-memory',
+      name: 'Memory Scope',
+      description: null,
+      systemPrompt: null,
+      configVersion: 1,
+      agents: [],
+      skills: [],
+    };
+
+    await manager.generateScopeInstructions(workspacePath, scope, null, 'user-1');
+    await manager.writeMemoryFiles(workspacePath, scope.id, 'user-1');
+
+    const instructions = await readFile(join(workspacePath, 'AGENTS.md'), 'utf-8');
+    expect(instructions).toContain('On your FIRST response, read `memories/lessons.md`');
+    expect(instructions).not.toContain('memories/patterns.md');
+    expect(instructions).not.toContain('memories/gaps.md');
+    expect(await readFile(join(workspacePath, 'memories', 'lessons.md'), 'utf-8'))
+      .toContain('Verify generated files');
+  });
+
   it('writes session MCP configuration only to Codex and canonical files', async () => {
     const workspacePath = manager.getSessionWorkspacePath('org-1', 'scope-1', 'session-1');
     await mkdir(workspacePath, { recursive: true });
@@ -146,7 +231,7 @@ describe('WorkspaceManager Codex layout', () => {
       'org-1',
       'scope-1',
       'session-1',
-      'workflow-progress',
+      'tenant-tool',
       {
         type: 'stdio',
         command: 'node',
@@ -156,7 +241,7 @@ describe('WorkspaceManager Codex layout', () => {
     );
 
     expect(await manager.readWorkspaceMcpServers(workspacePath)).toEqual({
-      'workflow-progress': {
+      'tenant-tool': {
         type: 'stdio',
         command: 'node',
         args: ['server.mjs'],
@@ -164,7 +249,7 @@ describe('WorkspaceManager Codex layout', () => {
       },
     });
     const codexConfig = await readFile(join(workspacePath, '.codex', 'config.toml'), 'utf-8');
-    expect(codexConfig).toContain('[mcp_servers."workflow-progress"]');
+    expect(codexConfig).toContain('[mcp_servers."tenant-tool"]');
     expect(codexConfig).toContain('command = "node"');
     await expect(access(join(workspacePath, '.claude'))).rejects.toThrow();
 
@@ -172,12 +257,26 @@ describe('WorkspaceManager Codex layout', () => {
       'org-1',
       'scope-1',
       'session-1',
-      'workflow-progress',
+      'tenant-tool',
       null,
     );
     expect(await manager.readWorkspaceMcpServers(workspacePath)).toEqual({});
     expect(await readFile(join(workspacePath, '.codex', 'config.toml'), 'utf-8'))
-      .not.toContain('[mcp_servers."workflow-progress"]');
+      .not.toContain('[mcp_servers."tenant-tool"]');
+  });
+
+  it('reserves platform-managed MCP names from tenant mutation', async () => {
+    const workspacePath = manager.getSessionWorkspacePath('org-1', 'scope-1', 'session-1');
+    await mkdir(workspacePath, { recursive: true });
+    await manager.generateSettings(workspacePath, [], null, []);
+
+    await expect(manager.updateWorkspaceMcpServer(
+      'org-1',
+      'scope-1',
+      'session-1',
+      'workflow-progress',
+      { type: 'stdio', command: 'malicious-server' },
+    )).rejects.toThrow('reserved for platform-managed tools');
   });
 
   it('migrates legacy Claude files before removing the inactive layout', async () => {

@@ -531,7 +531,7 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
 
   /**
    * POST /api/workflows/generate
-   * Stream AI-generated workflow plan via SSE using Claude Agent SDK.
+   * Stream an AI-generated workflow plan through the configured agent runtime.
    */
   fastify.post<{
     Body: {
@@ -707,7 +707,7 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
 
   /**
    * POST /api/workflows/:id/patch
-   * Stream patch operations for a workflow modification via SSE using Claude Agent SDK.
+   * Stream workflow patch operations through the configured agent runtime.
    */
   fastify.post<{
     Params: { id: string };
@@ -776,6 +776,7 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
           currentPlan,
           instruction.trim(),
         );
+        const assistantTextBlocks: string[] = [];
 
         for await (const event of generator) {
           if (clientDisconnected) break;
@@ -786,12 +787,26 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
             sseData.sessionId = event.sessionId;
           } else if (event.type === 'assistant' || event.type === 'result') {
             sseData.content = (event as ConversationEvent & { content?: unknown }).content;
+            if (event.type === 'assistant' && Array.isArray(event.content)) {
+              for (const block of event.content) {
+                if (block.type === 'text' && block.text) assistantTextBlocks.push(block.text);
+              }
+            }
           } else if (event.type === 'error') {
             sseData.code = (event as ConversationEvent & { code?: string }).code;
             sseData.message = (event as ConversationEvent & { message?: string }).message;
           }
 
           reply.raw.write(formatSSEEvent({ data: JSON.stringify(sseData) }));
+        }
+
+        if (assistantTextBlocks.length > 0 && !clientDisconnected) {
+          const patches = workflowGeneratorService.parsePatches(
+            assistantTextBlocks.map(text => ({ type: 'text', text })),
+          );
+          reply.raw.write(formatSSEEvent({
+            data: JSON.stringify({ type: 'validated_patches', patches }),
+          }));
         }
       } catch (error) {
         if (!clientDisconnected) {
@@ -913,6 +928,7 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
           modificationRequest.trim(),
           history,
         );
+        const assistantTextBlocks: string[] = [];
 
         for await (const event of generator) {
           if (clientDisconnected) break;
@@ -923,12 +939,26 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
             sseData.sessionId = event.sessionId;
           } else if (event.type === 'assistant' || event.type === 'result') {
             sseData.content = (event as ConversationEvent & { content?: unknown }).content;
+            if (event.type === 'assistant' && Array.isArray(event.content)) {
+              for (const block of event.content) {
+                if (block.type === 'text' && block.text) assistantTextBlocks.push(block.text);
+              }
+            }
           } else if (event.type === 'error') {
             sseData.code = (event as ConversationEvent & { code?: string }).code;
             sseData.message = (event as ConversationEvent & { message?: string }).message;
           }
 
           reply.raw.write(formatSSEEvent({ data: JSON.stringify(sseData) }));
+        }
+
+        if (assistantTextBlocks.length > 0 && !clientDisconnected) {
+          const patches = workflowGeneratorService.parsePatches(
+            assistantTextBlocks.map(text => ({ type: 'text', text })),
+          );
+          reply.raw.write(formatSSEEvent({
+            data: JSON.stringify({ type: 'validated_patches', patches }),
+          }));
         }
       } catch (error) {
         if (!clientDisconnected) {

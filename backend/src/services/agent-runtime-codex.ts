@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { realpath, stat } from 'node:fs/promises';
-import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { config } from '../config/index.js';
 import type { AgentRuntime, AgentRuntimeOptions } from './agent-runtime.js';
 import type {
@@ -17,6 +15,10 @@ import {
   adaptCodexNotification,
   createCodexAdapterState,
 } from './codex/codex-event-adapter.js';
+import {
+  AgentImageError,
+  resolveWorkspaceImage,
+} from './agent-image.js';
 
 interface ThreadResponse {
   thread: { id: string };
@@ -52,6 +54,8 @@ export class CodexAgentRuntime implements AgentRuntime {
   readonly name = 'codex';
   private readonly activeTurns = new Map<string, ActiveTurn>();
   private readonly uniqueTurns = new Set<ActiveTurn>();
+  private readonly claimedIds = new Set<string>();
+  private inFlightTurns = 0;
   private readonly clientFactory: CodexClientFactory;
 
   constructor(clientFactory?: CodexClientFactory) {
@@ -70,7 +74,7 @@ export class CodexAgentRuntime implements AgentRuntime {
     _pluginPaths?: string[],
     mcpServers?: Record<string, MCPServerSDKConfig>,
   ): AsyncGenerator<ConversationEvent> {
-    if (this.uniqueTurns.size >= config.codex.maxConcurrentSessions) {
+    if (this.inFlightTurns >= config.codex.maxConcurrentSessions) {
       yield {
         type: 'error',
         provider: 'codex',
@@ -82,7 +86,12 @@ export class CodexAgentRuntime implements AgentRuntime {
     }
 
     const platformSessionId = options.sessionId ?? randomUUID();
-    if (this.activeTurns.has(platformSessionId)) {
+    const requestedThreadId = options.providerThreadId ?? options.providerSessionId;
+    const claims = new Set([
+      platformSessionId,
+      ...(requestedThreadId ? [requestedThreadId] : []),
+    ]);
+    if ([...claims].some(id => this.claimedIds.has(id))) {
       yield {
         type: 'error',
         provider: 'codex',
@@ -92,15 +101,17 @@ export class CodexAgentRuntime implements AgentRuntime {
       };
       return;
     }
+    for (const id of claims) this.claimedIds.add(id);
+    this.inFlightTurns++;
 
-    const workspacePath = options.workspacePath
-      ?? await workspaceManager.ensureWorkspace(agentConfig.id, skills);
-    const client = this.clientFactory({ cwd: workspacePath });
+    let client: CodexAppServerTransport | null = null;
     let active: ActiveTurn | null = null;
 
     try {
+      const workspacePath = options.workspacePath
+        ?? await workspaceManager.ensureWorkspace(agentConfig.id, skills);
+      client = this.clientFactory({ cwd: workspacePath });
       await client.start();
-      const requestedThreadId = options.providerThreadId ?? options.providerSessionId;
       const threadParams = this.buildThreadParams(workspacePath, agentConfig, mcpServers);
       let replayedHistory = false;
       let threadResponse: ThreadResponse;
@@ -120,6 +131,14 @@ export class CodexAgentRuntime implements AgentRuntime {
       }
 
       const threadId = threadResponse.thread.id;
+      if (!claims.has(threadId) && this.claimedIds.has(threadId)) {
+        throw new CodexRuntimeError(
+          'CODEX_SESSION_BUSY',
+          'The resumed Codex thread is already owned by another active turn',
+        );
+      }
+      claims.add(threadId);
+      this.claimedIds.add(threadId);
       const model = threadResponse.model ?? this.resolveModel(agentConfig);
       active = {
         platformSessionId,
@@ -175,21 +194,39 @@ export class CodexAgentRuntime implements AgentRuntime {
         if (state.terminal) break;
       }
     } catch (error) {
-      if (!active?.interrupted) {
+      if (active?.interrupted) {
+        yield {
+          type: 'result',
+          provider: 'codex',
+          providerThreadId: active.threadId,
+          providerTurnId: active.turnId,
+          status: 'interrupted',
+          numTurns: 0,
+        };
+      } else {
+        const code = classifyCodexError(error);
+        if (code === 'CODEX_TIMEOUT' && active?.turnId) {
+          await active.client.request('turn/interrupt', {
+            threadId: active.threadId,
+            turnId: active.turnId,
+          }).catch(() => {});
+        }
         yield {
           type: 'error',
           provider: 'codex',
           providerThreadId: active?.threadId,
           providerTurnId: active?.turnId,
           status: 'failed',
-          code: classifyCodexError(error),
+          code,
           message: error instanceof Error ? error.message : String(error),
           suggestedAction: 'Check Codex authentication, model availability, and workspace permissions',
         };
       }
     } finally {
       if (active) this.untrackActive(active);
-      await client.close().catch(() => {});
+      await client?.close().catch(() => {});
+      for (const id of claims) this.claimedIds.delete(id);
+      this.inFlightTurns--;
     }
   }
 
@@ -243,6 +280,11 @@ export class CodexAgentRuntime implements AgentRuntime {
           aws: { region: config.aws.region },
         },
       },
+      sandbox_workspace_write: {
+        network_access: false,
+        exclude_slash_tmp: true,
+        exclude_tmpdir_env_var: true,
+      },
     };
     const renderedMcpServers = renderMcpServers(mcpServers);
     if (renderedMcpServers) {
@@ -286,7 +328,11 @@ export class CodexAgentRuntime implements AgentRuntime {
     for (const imagePath of imagePaths) {
       input.push({
         type: 'localImage',
-        path: await resolveWorkspaceImage(workspacePath, imagePath),
+        path: (await resolveWorkspaceImage(
+          workspacePath,
+          imagePath,
+          config.codex.maxImageBytes,
+        )).path,
       });
     }
     return input;
@@ -306,7 +352,11 @@ export class CodexAgentRuntime implements AgentRuntime {
       limit: 100,
       includeHidden: true,
     });
-    const selected = models.data.find(entry => entry.id === model || entry.model === model);
+    const capabilityNames = modelCapabilityNames(model);
+    const selected = models.data.find(entry => (
+      capabilityNames.has(entry.id ?? '')
+      || capabilityNames.has(entry.model ?? '')
+    ));
     if (!selected) {
       throw new CodexRuntimeError(
         'CODEX_MODEL_CAPABILITY_UNKNOWN',
@@ -338,6 +388,12 @@ export class CodexAgentRuntime implements AgentRuntime {
   }
 }
 
+function modelCapabilityNames(model: string): Set<string> {
+  const names = new Set([model]);
+  if (model.startsWith('openai.')) names.add(model.slice('openai.'.length));
+  return names;
+}
+
 async function nextWithTimeout<T>(
   iterator: AsyncIterator<T>,
   timeoutMs: number,
@@ -357,6 +413,7 @@ async function nextWithTimeout<T>(
 }
 
 function classifyCodexError(error: unknown): string {
+  if (error instanceof AgentImageError) return error.code;
   if (error instanceof CodexRuntimeError) return error.code;
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('thread/resume')) return 'CODEX_THREAD_RESUME_FAILED';
@@ -373,34 +430,6 @@ class CodexRuntimeError extends Error {
     super(message);
     this.name = 'CodexRuntimeError';
   }
-}
-
-const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
-
-async function resolveWorkspaceImage(workspacePath: string, imagePath: string): Promise<string> {
-  if (!imagePath || isAbsolute(imagePath)) {
-    throw new CodexRuntimeError('AGENT_IMAGE_INVALID', 'Image paths must be workspace-relative');
-  }
-  const workspaceRoot = await realpath(workspacePath);
-  const candidate = await realpath(resolve(workspaceRoot, imagePath)).catch(() => null);
-  if (!candidate) {
-    throw new CodexRuntimeError('AGENT_IMAGE_NOT_FOUND', `Attached image was not found: ${imagePath}`);
-  }
-  const relativePath = relative(workspaceRoot, candidate);
-  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
-    throw new CodexRuntimeError('AGENT_IMAGE_FORBIDDEN', 'Attached image escapes the session workspace');
-  }
-  if (!IMAGE_EXTENSIONS.has(extname(candidate).toLowerCase())) {
-    throw new CodexRuntimeError('AGENT_IMAGE_INVALID', `Unsupported image type: ${imagePath}`);
-  }
-  const file = await stat(candidate);
-  if (!file.isFile() || file.size <= 0 || file.size > config.codex.maxImageBytes) {
-    throw new CodexRuntimeError(
-      'AGENT_IMAGE_INVALID',
-      `Attached image must be a non-empty file no larger than ${config.codex.maxImageBytes} bytes`,
-    );
-  }
-  return candidate;
 }
 
 function formatReplayHistory(history: NonNullable<AgentRuntimeOptions['history']>): string {
@@ -440,6 +469,7 @@ function renderMcpServers(
         args: server.args ?? [],
         env: server.env ?? {},
         required: true,
+        ...(isPlatformManagedMcp(name) ? { default_tools_approval_mode: 'approve' } : {}),
       };
       continue;
     }
@@ -450,7 +480,12 @@ function renderMcpServers(
       url: server.url,
       http_headers: server.headers ?? {},
       required: true,
+      ...(isPlatformManagedMcp(name) ? { default_tools_approval_mode: 'approve' } : {}),
     };
   }
   return rendered;
+}
+
+function isPlatformManagedMcp(name: string): boolean {
+  return name === 'workflow-progress' || name === 'agentcore-tools';
 }

@@ -152,8 +152,9 @@ describe('Property 1: buildOptions produces correct ClaudeCodeOptions', () => {
         const opts = service.buildOptions(agentConfig, workspacePath, skillNames, mcpServers, resumeSessionId);
         expect(typeof opts.systemPrompt).toBe('string');
         expect(opts.systemPrompt).toContain('<security>');
-        if (agentConfig.systemPrompt !== null) {
-          expect(opts.systemPrompt).toContain(agentConfig.systemPrompt);
+        const expectedPrompt = agentConfig.systemPrompt?.trim();
+        if (expectedPrompt) {
+          expect(opts.systemPrompt).toContain(expectedPrompt);
         }
       }), { numRuns: 200 });
   });

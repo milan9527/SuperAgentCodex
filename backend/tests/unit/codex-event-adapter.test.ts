@@ -132,9 +132,9 @@ describe('codex-event-adapter', () => {
         outputTokens: 5,
         cacheReadInputTokens: 3,
         cacheCreationInputTokens: 2,
-        totalCostUsd: 0,
       },
     })]);
+    expect(result[0]?.tokenUsage).not.toHaveProperty('totalCostUsd');
   });
 
   it('rejects cross-thread and post-terminal notifications', () => {

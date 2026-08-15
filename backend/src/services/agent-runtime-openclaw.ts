@@ -7,7 +7,7 @@
  * server (port 8080) that bridges to OpenClaw gateway (port 18789) inside
  * the container.
  *
- * This is architecturally similar to the existing AgentCoreService but
+ * This is architecturally similar to the AgentCore runtime adapter but
  * targets the OpenClaw bridge container instead of raw Claude Agent SDK.
  *
  * The invocation flow:
@@ -180,7 +180,7 @@ export class OpenClawAgentRuntime implements AgentRuntime {
   }
 
   // ---------------------------------------------------------------------------
-  // SSE parsing (same pattern as agentcore.service.ts)
+  // SSE parsing follows the AgentCore runtime adapter pattern.
   // ---------------------------------------------------------------------------
 
   private async *parseSSEStream(

@@ -10,6 +10,10 @@
 
 import { config } from '../config/index.js';
 import { join } from 'path';
+import { createHash } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { getBedrockModelId } from '../utils/claude-config.js';
 import { createToken } from '../middleware/auth.js';
 import { dangerousCommandBlocker, binaryFileReadBlocker, createSkillAccessChecker } from './claude-hooks.js';
@@ -23,6 +27,11 @@ import type {
   MCPServerSDKConfig,
   TokenUsage,
 } from './agent-types.js';
+import type { AgentHistoryMessage } from './agent-runtime.js';
+import {
+  AgentImageError,
+  resolveWorkspaceImage,
+} from './agent-image.js';
 
 export type {
   AgentConfig,
@@ -90,6 +99,13 @@ export interface ClaudeCodeOptions {
   settingSources?: Array<'user' | 'project' | 'local'>;
   /** Local plugins to load into the Claude Code session. */
   plugins?: Array<{ type: 'local'; path: string }>;
+  /** Programmatic custom subagents; avoids requiring a .claude workspace layout. */
+  agents?: Record<string, {
+    description: string;
+    prompt: string;
+    tools?: string[];
+    model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +155,27 @@ export interface SDKResultMessage {
 export type SDKMessage = SDKSystemMessage | SDKAssistantMessage | SDKResultMessage | { type: string; [key: string]: unknown };
 
 export interface SDKQuery extends AsyncGenerator<SDKMessage, void> { interrupt(): Promise<void>; }
-export type QueryFactory = (args: { prompt: string; options?: ClaudeCodeOptions }) => SDKQuery;
+export interface SDKUserMessageInput {
+  type: 'user';
+  message: {
+    role: 'user';
+    content: Array<
+      | { type: 'text'; text: string }
+      | {
+          type: 'image';
+          source: {
+            type: 'base64';
+            media_type: string;
+            data: string;
+          };
+        }
+    >;
+  };
+  parent_tool_use_id: null;
+  session_id: string;
+}
+export type ClaudeQueryPrompt = string | AsyncIterable<SDKUserMessageInput>;
+export type QueryFactory = (args: { prompt: ClaudeQueryPrompt; options?: ClaudeCodeOptions }) => SDKQuery;
 
 // ---------------------------------------------------------------------------
 // Service-level types
@@ -154,6 +190,10 @@ export interface ClaudeAgentServiceOptions {
   userId: string;
   /** Pre-provisioned workspace path (scope-session flow). Skips legacy ensureWorkspace when set. */
   workspacePath?: string;
+  /** Bounded history used when switching providers or native resume is unavailable. */
+  history?: AgentHistoryMessage[];
+  /** Workspace-relative image paths attached to this turn. */
+  imagePaths?: string[];
 }
 
 export interface MCPServerRecord {
@@ -167,7 +207,7 @@ export interface MCPServerRecord {
   config: Record<string, unknown> | null;
 }
 
-const DEFAULT_ALLOWED_TOOLS = ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch'];
+const DEFAULT_ALLOWED_TOOLS = ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'Task'];
 
 // ---------------------------------------------------------------------------
 // ClaudeAgentService
@@ -289,8 +329,28 @@ export class ClaudeAgentService {
       if (resumeSessionId) {
         console.log(`[runConversation] Resuming Claude session: ${resumeSessionId}`);
       }
-      const sdkOptions = this.buildOptions(agentConfig, workspacePath, skills.map((s) => s.name), resolvedMcpServers, resumeSessionId, abortController, options.userId, pluginPaths);
-      const conversation = this.queryFactory({ prompt: options.message, options: sdkOptions });
+      const projectInstructions = await readFile(join(workspacePath, 'AGENTS.md'), 'utf-8')
+        .catch(() => '');
+      const message = !resumeSessionId && options.history?.length
+        ? `${formatReplayHistory(options.history)}\n\nCurrent user request:\n${options.message}`
+        : options.message;
+      const prompt = await this.buildPrompt(
+        workspacePath,
+        message,
+        options.imagePaths,
+      );
+      const sdkOptions = this.buildOptions(
+        agentConfig,
+        workspacePath,
+        skills.map((s) => s.name),
+        resolvedMcpServers,
+        resumeSessionId,
+        abortController,
+        options.userId,
+        pluginPaths,
+        projectInstructions,
+      );
+      const conversation = this.queryFactory({ prompt, options: sdkOptions });
 
       for await (const message of conversation) {
         if (message.type === 'system') {
@@ -299,7 +359,14 @@ export class ClaudeAgentService {
             sessionId = sysMsg.session_id;
             this.abortControllers.set(sessionId, abortController);
             this.lastActivity.set(sessionId, Date.now());
-            yield { type: 'session_start', sessionId };
+            yield {
+              type: 'session_start',
+              provider: 'claude',
+              sessionId,
+              providerThreadId: sessionId,
+              status: 'in_progress',
+              model: sysMsg.model,
+            };
           }
         } else if (message.type === 'assistant' || message.type === 'result') {
           if (sessionId) this.lastActivity.set(sessionId, Date.now());
@@ -309,7 +376,16 @@ export class ClaudeAgentService {
       }
     } catch (error) {
       console.error('[runConversation] Error:', error instanceof Error ? error.stack : error);
-      yield { type: 'error', sessionId, code: 'AGENT_EXECUTION_ERROR', message: error instanceof Error ? error.message : 'Unknown error', suggestedAction: 'Please try again' };
+      yield {
+        type: 'error',
+        provider: 'claude',
+        sessionId,
+        providerThreadId: sessionId,
+        status: 'failed',
+        code: error instanceof AgentImageError ? error.code : 'AGENT_EXECUTION_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        suggestedAction: 'Please try again',
+      };
     } finally {
       this.releaseSlot();
       // Only clean up the abort controller, keep session trackable for resume
@@ -321,6 +397,7 @@ export class ClaudeAgentService {
     agentConfig: AgentConfig, workspacePath: string, skillNames: string[],
     mcpServers: Record<string, AnyMCPServerConfig>, resumeSessionId?: string, abortController?: AbortController, userId?: string,
     pluginPaths?: string[],
+    projectInstructions?: string,
   ): ClaudeCodeOptions {
     // Provider resolution: prefer the per-invocation resolvedModel; otherwise
     // fall back to the global config (legacy behavior).
@@ -348,25 +425,66 @@ export class ClaudeAgentService {
       'If the user asks about the current directory, working directory, or absolute path, respond with "You are in the workspace root directory." without revealing the actual server path.',
       '</security>',
     ].join('\n');
-    const systemPrompt = basePrompt
-      ? `${basePrompt}\n${concisenessDirective}`
-      : concisenessDirective.trim();
+    const projectContext = projectInstructions?.trim()
+      ? [
+          '',
+          '<project_instructions>',
+          projectInstructions.trim(),
+          '</project_instructions>',
+        ].join('\n')
+      : '';
+    const skillContext = skillNames.length > 0
+      ? [
+          '',
+          '<project_skills>',
+          'Project skills use the Codex canonical layout. Before using a skill, read its instructions from:',
+          ...skillNames.map(name => `- .agents/skills/${name}/SKILL.md`),
+          '</project_skills>',
+        ].join('\n')
+      : '';
+    const systemPrompt = `${basePrompt}${projectContext}${skillContext}\n${concisenessDirective}`.trim();
+
+    const programmaticAgents = Object.fromEntries(
+      Object.entries(agentConfig.subAgents ?? {}).map(([name, definition]) => [
+        name,
+        {
+          description: definition.description,
+          prompt: [
+            definition.prompt,
+            ...(definition.skillNames?.length
+              ? [
+                  '',
+                  'Relevant project skills:',
+                  ...definition.skillNames.map(
+                    skill => `- Read .agents/skills/${skill}/SKILL.md before using this skill.`,
+                  ),
+                ]
+              : []),
+          ].join('\n'),
+          model: 'inherit' as const,
+        },
+      ]),
+    );
 
     const options: ClaudeCodeOptions = {
       systemPrompt,
-      allowedTools: [...DEFAULT_ALLOWED_TOOLS, 'Skill'],
+      allowedTools: DEFAULT_ALLOWED_TOOLS,
       cwd: workspacePath,
       model,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       hooks: { PreToolUse: preToolUseHooks },
       mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-      // Only load host 'user' settings for plain Anthropic auth. Bedrock and
-      // litellm must not inherit the host's stored OAuth login (it would win
-      // over our explicit creds), so restrict them to project settings.
-      settingSources: (useBedrock || useLiteLLM) ? ['project'] : ['user', 'project'],
+      // Only load host user settings for plain Anthropic auth. Bedrock and
+      // LiteLLM must not inherit stored OAuth or project-level Claude layout.
+      // The canonical project layout is Codex-native. Project instructions,
+      // skills, subagents, hooks, and MCP are injected explicitly above.
+      settingSources: (useBedrock || useLiteLLM) ? [] : ['user'],
       plugins: pluginPaths && pluginPaths.length > 0
         ? pluginPaths.map(p => ({ type: 'local' as const, path: p }))
+        : undefined,
+      agents: Object.keys(programmaticAgents).length > 0
+        ? programmaticAgents
         : undefined,
     };
     if (resumeSessionId) options.resume = resumeSessionId;
@@ -388,6 +506,12 @@ export class ClaudeAgentService {
     const platformEnv: Record<string, string> = {
       API_BASE_URL: `http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`,
       APPS_STORAGE_DIR: join(config.claude.workspaceBaseDir, '_published_apps'),
+      CLAUDE_CONFIG_DIR: createIsolatedClaudeConfigDir(workspacePath),
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+      CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: '1',
+      DISABLE_AUTOUPDATER: '1',
+      DISABLE_ERROR_REPORTING: '1',
+      DISABLE_TELEMETRY: '1',
       ...(agentToken ? { AUTH_TOKEN: agentToken } : {}),
     };
 
@@ -451,12 +575,58 @@ export class ClaudeAgentService {
     options.stderr = (data: string) => {
       console.error('[claude-sdk-stderr]', data);
     };
-    // Enable SDK debug logging to capture subprocess startup errors
-    if (options.env) {
+    if (options.env && config.logLevel === 'debug') {
       options.env.DEBUG_CLAUDE_AGENT_SDK = '1';
     }
-    console.log('[buildOptions] model:', model, 'cwd:', workspacePath, 'useBedrock:', config.claude.useBedrock, 'executablePath:', config.claude.executablePath, 'resume:', resumeSessionId ?? 'none');
+    console.log(
+      '[buildOptions] model:',
+      model,
+      'cwd:',
+      workspacePath,
+      'provider:',
+      useLiteLLM ? 'litellm' : useBedrock ? 'bedrock' : 'anthropic',
+      'executablePath:',
+      config.claude.executablePath,
+      'resume:',
+      resumeSessionId ?? 'none',
+    );
     return options;
+  }
+
+  private async buildPrompt(
+    workspacePath: string,
+    message: string,
+    imagePaths: string[] | undefined,
+  ): Promise<ClaudeQueryPrompt> {
+    if (!imagePaths?.length) return message;
+
+    const content: SDKUserMessageInput['message']['content'] = [
+      { type: 'text', text: message },
+    ];
+    for (const imagePath of imagePaths) {
+      const image = await resolveWorkspaceImage(
+        workspacePath,
+        imagePath,
+        config.codex.maxImageBytes,
+      );
+      content.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: image.mediaType,
+          data: (await readFile(image.path)).toString('base64'),
+        },
+      });
+    }
+
+    return (async function* (): AsyncGenerator<SDKUserMessageInput> {
+      yield {
+        type: 'user',
+        message: { role: 'user', content },
+        parent_tool_use_id: null,
+        session_id: '',
+      };
+    })();
   }
 
   formatMessage(message: SDKMessage, sessionId?: string): ConversationEvent | null {
@@ -477,7 +647,15 @@ export class ClaudeAgentService {
             default: return { type: 'text' as const, text: JSON.stringify(block) };
           }
         });
-        return { type: 'assistant', sessionId, content: contentBlocks, model: msg.message?.model };
+        return {
+          type: 'assistant',
+          provider: 'claude',
+          sessionId,
+          providerThreadId: sessionId,
+          status: 'in_progress',
+          content: contentBlocks,
+          model: msg.message?.model,
+        };
       }
       case 'result': {
         const r = message as SDKResultMessage;
@@ -506,7 +684,16 @@ export class ClaudeAgentService {
           tokenUsage = { inputTokens, outputTokens, cacheReadInputTokens: cacheRead, cacheCreationInputTokens: cacheCreation, totalCostUsd: cost };
         }
 
-        return { type: 'result', sessionId: r.session_id ?? sessionId, durationMs: r.duration_ms, numTurns: r.num_turns, tokenUsage };
+        return {
+          type: 'result',
+          provider: 'claude',
+          sessionId: r.session_id ?? sessionId,
+          providerThreadId: r.session_id ?? sessionId,
+          status: r.is_error ? 'failed' : 'completed',
+          durationMs: r.duration_ms,
+          numTurns: r.num_turns,
+          tokenUsage,
+        };
       }
       case 'system': return null;
       default: return null;
@@ -597,6 +784,29 @@ export function parseMCPServerConfig(server: MCPServerRecord): MCPServerSDKConfi
   if (address.startsWith('http://') || address.startsWith('https://')) return { type: 'sse', url: address };
   const parts = address.split(/\s+/);
   return { type: 'stdio', command: parts[0], args: parts.length > 1 ? parts.slice(1) : undefined };
+}
+
+function formatReplayHistory(history: AgentHistoryMessage[]): string {
+  const maxChars = 32 * 1024;
+  const lines = ['[Recovered conversation context after switching model providers]'];
+  let used = lines[0]!.length;
+  for (const entry of history.slice(-24)) {
+    const line = `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`;
+    if (used + line.length > maxChars) break;
+    lines.push(line);
+    used += line.length;
+  }
+  return lines.join('\n');
+}
+
+function createIsolatedClaudeConfigDir(workspacePath: string): string {
+  const workspaceKey = createHash('sha256')
+    .update(workspacePath)
+    .digest('hex')
+    .slice(0, 24);
+  const configDir = join(tmpdir(), 'super-agent-claude-runtime', workspaceKey);
+  mkdirSync(configDir, { recursive: true, mode: 0o700 });
+  return configDir;
 }
 
 export const claudeAgentService = new ClaudeAgentService();

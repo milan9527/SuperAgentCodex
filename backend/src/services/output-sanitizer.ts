@@ -52,12 +52,24 @@ function buildPatterns(): { pattern: RegExp; replacement: string }[] {
 
   // Internal tokens / env vars that might be echoed
   patterns.push({
-    pattern: /AUTH_TOKEN=[^\s"'`]+/g,
-    replacement: 'AUTH_TOKEN=[REDACTED]',
+    pattern: /(AUTH_TOKEN|API_KEY|OPENAI_API_KEY|AWS_BEARER_TOKEN_BEDROCK)=[^\s"'`]+/g,
+    replacement: '$1=[REDACTED]',
   });
   patterns.push({
-    pattern: /(?:AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID)=[^\s"'`]+/g,
+    pattern: /(AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AWS_SESSION_TOKEN)=[^\s"'`]+/g,
     replacement: '$1=[REDACTED]',
+  });
+  patterns.push({
+    pattern: /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+    replacement: 'Bearer [REDACTED]',
+  });
+  patterns.push({
+    pattern: /\b(?:sk|sess)-[A-Za-z0-9_-]{16,}\b/g,
+    replacement: '[REDACTED_API_KEY]',
+  });
+  patterns.push({
+    pattern: /"(backend_api_key|api_key|authorization|auth_token)"\s*:\s*"[^"]*"/gi,
+    replacement: '"$1":"[REDACTED]"',
   });
 
   return patterns;
@@ -98,7 +110,7 @@ function sanitizeContentBlock(block: ContentBlock): ContentBlock {
     case 'tool_result':
       return {
         ...block,
-        content: block.content ? sanitizeString(block.content) : null,
+        content: block.content ? sanitizeString(block.content) : '',
       };
     default:
       return block;

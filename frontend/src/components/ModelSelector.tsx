@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { modelProviderService } from '@/services/modelProviderService'
 import type { ModelProvider, ModelSelection } from '@/types'
+import {
+  filterRuntimeCompatibleProviders,
+  loadRuntimeModelsForProvider,
+} from '@/services/runtimeModelCompatibility'
 
 interface ModelSelectorProps {
   value?: ModelSelection
@@ -34,16 +38,24 @@ export function ModelSelector({
   const modelId = value?.modelId ?? ''
 
   useEffect(() => {
-    modelProviderService.list().then(setProviders).catch(() => setProviders([]))
+    modelProviderService.list()
+      .then(filterRuntimeCompatibleProviders)
+      .then(setProviders)
+      .catch(() => setProviders([]))
   }, [])
 
   useEffect(() => {
+    if (!providerId) {
+      setModels([])
+      return
+    }
+    const provider = providers.find(item => item.id === providerId)
     setLoadingModels(true)
-    modelProviderService.listModels(providerId || undefined)
+    loadRuntimeModelsForProvider(provider)
       .then(setModels)
       .catch(() => setModels([]))
       .finally(() => setLoadingModels(false))
-  }, [providerId])
+  }, [providerId, providers])
 
   return (
     <div className="space-y-2">

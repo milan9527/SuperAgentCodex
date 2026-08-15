@@ -1,4 +1,10 @@
-import Fastify, { FastifyInstance, FastifyRequest, FastifyReply, FastifyError } from 'fastify';
+import Fastify, {
+  FastifyInstance,
+  FastifyRequest,
+  FastifyReply,
+  FastifyError,
+  LogController,
+} from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import swagger from '@fastify/swagger';
@@ -58,7 +64,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     logger: loggerConfig,
     genReqId: () => crypto.randomUUID(),
     // Disable default request logging (we use custom hooks)
-    disableRequestLogging: true,
+    logController: new LogController({ disableRequestLogging: true }),
     // Increase body limit to 200MB to support large file uploads (base64-encoded
     // 100MB file → ~134MB base64 payload, plus JSON overhead)
     bodyLimit: 200 * 1024 * 1024, // 200MB
@@ -292,12 +298,12 @@ export async function buildApp(): Promise<FastifyInstance> {
     claudeAgentService.startCleanupTimer();
   }
 
-  // ── Graceful shutdown for Claude sessions (api + all) ──
+  // ── Graceful shutdown for active agent sessions (api + all) ──
   app.addHook('onClose', async (_instance) => {
-    app.log.info('Server shutting down — disconnecting all Claude Agent SDK sessions...');
+    app.log.info('Server shutting down — disconnecting all active agent sessions...');
     try {
       const count = await claudeAgentService.disconnectAll();
-      app.log.info(`Graceful shutdown complete: cleaned up ${count} Claude session(s)`);
+      app.log.info(`Graceful shutdown complete: cleaned up ${count} agent session(s)`);
       const devCount = devServerManager.stopAll();
       if (devCount > 0) app.log.info(`Stopped ${devCount} dev server(s)`);
       await shutdownLangfuse();
@@ -305,7 +311,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (error) {
       app.log.error(
         { err: error },
-        'Error during Claude Agent SDK graceful shutdown',
+        'Error during agent runtime graceful shutdown',
       );
     }
   });

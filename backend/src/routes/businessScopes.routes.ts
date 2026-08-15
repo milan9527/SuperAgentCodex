@@ -26,6 +26,7 @@ import { paginationSchema, idParamSchema } from '../schemas/common.schema.js';
 import { ZodError } from 'zod';
 import { AppError } from '../middleware/errorHandler.js';
 import { prisma } from '../config/database.js';
+import { config as appConfig } from '../config/index.js';
 
 /**
  * Request types for route handlers
@@ -817,14 +818,26 @@ export async function businessScopeRoutes(fastify: FastifyInstance): Promise<voi
     { preHandler: [authenticate] },
     async (request, reply) => {
       const { id } = validateSchema(idParamSchema, request.params);
-      const orgId = request.user!.orgId;
+      await scopeAccessService.requireAccess(request.user!, id, 'viewer');
       const rows = await prisma.$queryRaw<Array<{ id: string; name: string; git_url: string; ref: string; assigned_at: Date }>>`
         SELECT sp.id, sp.name, sp.git_url, sp.ref, sp.assigned_at
         FROM scope_plugins sp
         WHERE sp.business_scope_id = ${id}::uuid
         ORDER BY sp.assigned_at DESC
       `;
-      return reply.status(200).send({ data: rows });
+      const codexRuntime = appConfig.agentRuntime === 'codex'
+        || appConfig.agentRuntime === 'agentcore';
+      return reply.status(200).send({
+        data: rows.map(plugin => ({
+          ...plugin,
+          compatibility: codexRuntime ? 'unsupported' : 'supported',
+          compatibility_reason: codexRuntime
+            ? 'This plugin has not been converted to the Codex plugin protocol.'
+            : null,
+        })),
+        runtime: appConfig.agentRuntime,
+        additions_supported: !codexRuntime,
+      });
     },
   );
 
@@ -852,6 +865,13 @@ export async function businessScopeRoutes(fastify: FastifyInstance): Promise<voi
       const { id } = validateSchema(idParamSchema, request.params);
       const orgId = request.user!.orgId;
       const { name, gitUrl, ref } = request.body;
+      await scopeAccessService.requireAccess(request.user!, id, 'member');
+      if (appConfig.agentRuntime === 'codex' || appConfig.agentRuntime === 'agentcore') {
+        throw AppError.conflict(
+          'Plugins are disabled for Codex until they have an explicit compatibility result.',
+          { runtime: appConfig.agentRuntime, compatibility: 'unsupported' },
+        );
+      }
 
       // Verify scope belongs to org
       const scope = await businessScopeService.getBusinessScopeById(id, orgId);
@@ -885,6 +905,7 @@ export async function businessScopeRoutes(fastify: FastifyInstance): Promise<voi
       const scopeId = request.params.id;
       const pluginId = request.params.pluginId;
       const orgId = request.user!.orgId;
+      await scopeAccessService.requireAccess(request.user!, scopeId, 'member');
 
       // Look up plugin name before deleting so we can remove the cloned directory
       const [plugin] = await prisma.$queryRaw<Array<{ name: string }>>`

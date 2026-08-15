@@ -19,6 +19,7 @@ export const createModelProviderSchema = z
     /** Plain-text LiteLLM API key — encrypted server-side, never returned. */
     api_key: z.string().min(1).optional().nullable(),
     default_model_id: z.string().max(255).optional().nullable(),
+    allowed_model_ids: z.array(z.string().min(1).max(255)).max(100).optional(),
     is_org_default: z.boolean().optional().default(false),
   })
   .refine((v) => v.type !== 'litellm' || !!v.base_url, {
@@ -32,6 +33,7 @@ export const updateModelProviderSchema = z.object({
   /** When present (non-empty), re-encrypts and replaces the stored key. */
   api_key: z.string().min(1).optional().nullable(),
   default_model_id: z.string().max(255).optional().nullable(),
+  allowed_model_ids: z.array(z.string().min(1).max(255)).max(100).optional(),
   is_org_default: z.boolean().optional(),
   /** Enable/disable: disabled providers are hidden from scope/agent/chat pickers and skipped by the resolver. */
   enabled: z.boolean().optional(),

@@ -38,11 +38,12 @@ import { RestChatRoomService } from '@/services/api/restChatRoomService'
 import { RestChatService } from '@/services/api/restChatService'
 import type { QuickQuestion, Agent, ModelProvider } from '@/types'
 import { modelProviderService } from '@/services/modelProviderService'
-import { filterRuntimeCompatibleProviders } from '@/services/runtimeModelCompatibility'
+import { loadRuntimeModelGroups } from '@/services/runtimeModelCompatibility'
 import { getAvatarDisplayUrl, getAvatarFallback, shouldShowAvatarImage } from '@/utils/avatarUtils'
 import { restClient } from '@/services/api/restClient'
 import { getValidToken } from '@/services/auth'
 import { AgentMentionPopup, type AgentMentionPopupHandle, type MentionAgent } from '@/components/chat/AgentMentionPopup'
+import { parseXlsxPreview } from '@/lib/xlsxPreview'
 
 hljs.registerLanguage('bash', bash)
 hljs.registerLanguage('cpp', cpp)
@@ -75,11 +76,12 @@ interface FileTab {
 const PREVIEWABLE_EXTENSIONS = new Set(['md', 'markdown', 'html', 'htm'])
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'])
 const PDF_EXTENSIONS = new Set(['pdf'])
-const EXCEL_EXTENSIONS = new Set(['xlsx', 'xls', 'xlsb'])
+const EXCEL_EXTENSIONS = new Set(['xlsx'])
+const LEGACY_EXCEL_EXTENSIONS = new Set(['xls', 'xlsb'])
 const OFFICE_DOC_EXTENSIONS = new Set(['doc', 'docx', 'ppt', 'pptx'])
 /** Binary file extensions that must NOT be read as UTF-8 text */
 const BINARY_EXTENSIONS = new Set([
-  ...IMAGE_EXTENSIONS, ...PDF_EXTENSIONS, ...EXCEL_EXTENSIONS,
+  ...IMAGE_EXTENSIONS, ...PDF_EXTENSIONS, ...EXCEL_EXTENSIONS, ...LEGACY_EXCEL_EXTENSIONS,
   'doc', 'docx', 'ppt', 'pptx', 'zip', 'gz', 'tar', 'rar', '7z',
   'mp3', 'mp4', 'wav', 'avi', 'mov', 'woff', 'woff2', 'ttf', 'otf', 'eot',
 ])
@@ -212,17 +214,12 @@ function FileViewerTab({ path, sessionId }: { path: string; sessionId: string })
           if (isImage) {
             setImageUrl(URL.createObjectURL(blob))
           } else if (isExcel) {
-            // Parse Excel file using SheetJS
+            // Parse modern XLSX files with a browser-only parser. Legacy XLS/XLSB
+            // files remain downloadable but are not parsed in-process.
             try {
-              const XLSX = await import('xlsx')
-              const arrayBuffer = await blob.arrayBuffer()
-              const workbook = XLSX.read(arrayBuffer, { type: 'array' })
-              const sheets: Record<string, string[][]> = {}
-              for (const name of workbook.SheetNames) {
-                sheets[name] = XLSX.utils.sheet_to_json<string[]>(workbook.Sheets[name]!, { header: 1 })
-              }
-              setExcelData({ sheetNames: workbook.SheetNames, sheets })
-              setActiveSheet(workbook.SheetNames[0] ?? '')
+              const preview = await parseXlsxPreview(blob)
+              setExcelData(preview)
+              setActiveSheet(preview.sheetNames[0] ?? '')
             } catch {
               setContent(t('chat.failedToParseExcel'))
             }
@@ -1404,26 +1401,14 @@ function MessageInput({ onSend, onStop, onUpload, sessionId, businessScopeId, di
       .catch(() => setAllFiles([]))
   }, [sessionId])
 
-  // Load enabled providers into one grouped list. Chat offers ONLY the single
-  // model the admin configured on each provider (its defaultModelId) — for both
-  // bedrock and litellm. We never fetch the provider's full catalog here:
-  // listing every Bedrock region model or every gateway model would flood the
-  // picker; the admin already picked the intended model at setup time.
+  // Chat only consumes models explicitly enabled in Admin Settings.
   useEffect(() => {
     if (!showModelPicker || modelGroups.length > 0) return
     let cancelled = false
     setModelsLoading(true)
     ;(async () => {
       try {
-        const providers = filterRuntimeCompatibleProviders(
-          await modelProviderService.list(),
-        )
-        const groups = providers.map((provider) => {
-          const models = provider.defaultModelId
-            ? [{ id: provider.defaultModelId, litellm_model: provider.defaultModelId, provider: provider.type }]
-            : []
-          return { provider, models }
-        })
+        const groups = await loadRuntimeModelGroups(await modelProviderService.list())
         if (!cancelled) setModelGroups(groups)
       } catch {
         if (!cancelled) setModelGroups([])
@@ -1814,6 +1799,11 @@ function MessageInput({ onSend, onStop, onUpload, sessionId, businessScopeId, di
                     <div key={provider.id}>
                       <div className="mt-1 border-t border-gray-700 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                         {provider.name}{provider.isOrgDefault ? ' ★' : ''}
+                        {provider.runtimeTarget && (
+                          <span className="ml-2 normal-case font-normal text-gray-600">
+                            {provider.runtimeTarget}
+                          </span>
+                        )}
                       </div>
                       {models.length === 0 ? (
                         <div className="px-3 py-1.5 text-[11px] text-gray-600 italic">{t('chat.noModels')}</div>

@@ -1,8 +1,8 @@
 /**
  * Workflow Generator Service
  *
- * Uses the Claude Agent SDK (same as Chat Mode and Scope Generator)
- * to generate workflow plans from natural language descriptions.
+ * Uses the configured AgentRuntime to generate workflow plans from natural
+ * language descriptions.
  */
 
 import { agentRuntime } from './agent-runtime-factory.js';
@@ -403,7 +403,14 @@ export class WorkflowGeneratorService {
     }
 
     // Validate and normalize task types
-    const validTypes = new Set(['agent', 'action', 'condition', 'document', 'codeArtifact']);
+    const validTypes = new Set([
+      'agent',
+      'action',
+      'condition',
+      'document',
+      'codeArtifact',
+      'humanApproval',
+    ]);
     for (const task of parsed.tasks) {
       if (!task.id || !task.title) {
         throw new Error(`Invalid task: missing id or title`);
@@ -462,6 +469,48 @@ export class WorkflowGeneratorService {
 
     if (!Array.isArray(parsed)) {
       throw new Error('Invalid patches: expected a JSON array');
+    }
+
+    const requiredFieldByOperation: Record<string, string | null> = {
+      updateTitle: 'title',
+      createTask: 'task',
+      updateTask: 'taskId',
+      deleteTask: 'taskId',
+      createVariable: 'variable',
+      updateVariable: 'variableId',
+      deleteVariable: 'variableId',
+      reorderTasks: 'taskOrder',
+      relayout: null,
+    };
+
+    for (const [index, patch] of parsed.entries()) {
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+        throw new Error(`Invalid patch at index ${index}: expected an object`);
+      }
+      const operation = (patch as Record<string, unknown>).op;
+      if (typeof operation !== 'string' || !(operation in requiredFieldByOperation)) {
+        throw new Error(`Invalid patch at index ${index}: unsupported operation`);
+      }
+      const requiredField = requiredFieldByOperation[operation];
+      if (requiredField && (patch as Record<string, unknown>)[requiredField] == null) {
+        throw new Error(
+          `Invalid patch at index ${index}: ${operation} requires ${requiredField}`,
+        );
+      }
+      if (
+        operation === 'updateTask'
+        && (patch as Record<string, unknown>).taskData == null
+      ) {
+        throw new Error(`Invalid patch at index ${index}: updateTask requires taskData`);
+      }
+      if (
+        operation === 'updateVariable'
+        && (patch as Record<string, unknown>).variableData == null
+      ) {
+        throw new Error(
+          `Invalid patch at index ${index}: updateVariable requires variableData`,
+        );
+      }
     }
 
     return parsed;

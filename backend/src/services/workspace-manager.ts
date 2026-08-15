@@ -23,6 +23,10 @@ import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/clien
 import { config } from '../config/index.js';
 import { buildCodexSecurityHookScript } from './codex/codex-security-hook.js';
 import type { MCPServerSDKConfig } from './agent-types.js';
+import {
+  renderGeneratedSkillContext,
+  stripGeneratedSkillContext,
+} from './agent-skill-context.js';
 
 // Built-in skills directory: backend/skills/
 const __filename = fileURLToPath(import.meta.url);
@@ -157,7 +161,8 @@ export const WORKSPACE_LAYOUTS: Record<WorkspaceRuntime, RuntimeWorkspaceLayout>
 
 const MANIFEST_FILENAME = '.workspace-manifest.json';
 const MCP_SERVERS_FILENAME = '.runtime/mcp-servers.json';
-const WORKSPACE_LAYOUT_VERSION = 2;
+const PLATFORM_MANAGED_MCP_NAMES = new Set(['workflow-progress', 'agentcore-tools']);
+const WORKSPACE_LAYOUT_VERSION = 3;
 
 export class WorkspaceManager {
   private readonly baseDir: string;
@@ -725,39 +730,66 @@ export class WorkspaceManager {
 
     // Memory — pinned memories inlined for instant recall, others on-demand
     const { scopeMemoryRepository: memRepo } = await import('../repositories/scope-memory.repository.js');
-    const pinnedMemories = await memRepo.findForContext(scope.id, userId).then(
-      (all) => all.filter((m) => m.is_pinned),
+    const memories = await memRepo.findForContext(scope.id, userId);
+    const pinnedMemories = memories.filter((memory) => memory.is_pinned);
+    const hasLessons = memories.some((memory) => (
+      !memory.is_pinned
+      && (memory.category === 'lesson' || !['pattern', 'gap'].includes(memory.category))
+    ));
+    const hasPatterns = memories.some(
+      (memory) => !memory.is_pinned && memory.category === 'pattern',
     );
+    const hasGaps = memories.some(
+      (memory) => !memory.is_pinned && memory.category === 'gap',
+    );
+    const hasOnDemandMemories = hasLessons || hasPatterns || hasGaps;
 
-    lines.push('');
-    lines.push('## Memory');
-    lines.push('');
-
-    // Inline pinned memories so the agent "just knows" critical info
-    if (pinnedMemories.length > 0) {
-      lines.push('### What you already know (pinned by user)');
+    if (pinnedMemories.length > 0 || hasOnDemandMemories) {
       lines.push('');
-      for (const m of pinnedMemories) {
-        lines.push(`- **${m.title}**: ${m.content}`);
+      lines.push('## Memory');
+      lines.push('');
+
+      // Inline pinned memories so the agent "just knows" critical info.
+      if (pinnedMemories.length > 0) {
+        lines.push('### What you already know (pinned by user)');
+        lines.push('');
+        for (const memory of pinnedMemories) {
+          lines.push(`- **${memory.title}**: ${memory.content}`);
+        }
+        lines.push('');
+        lines.push('The above is ground truth — if it conflicts with other context, trust this.');
+        lines.push('');
       }
-      lines.push('');
-      lines.push('The above is ground truth — if it conflicts with other context, trust this.');
-      lines.push('');
-    }
 
-    lines.push('### Past knowledge (read on demand)');
-    lines.push('');
-    lines.push('Additional memories from past conversations are in `memories/`:');
-    lines.push('');
-    lines.push('- `memories/lessons.md` — Mistakes, corrections, and improvements');
-    lines.push('- `memories/patterns.md` — Recurring user needs and effective solution paths');
-    lines.push('- `memories/gaps.md` — Capability gaps and unresolved requests');
-    lines.push('');
-    lines.push('On your FIRST response, read `memories/lessons.md` to refresh context.');
-    lines.push('Also check `memories/patterns.md` when a task feels familiar, and `memories/gaps.md` when stuck.');
-    lines.push('');
-    lines.push('These files are managed by the system — do not edit them.');
-    lines.push('');
+      if (hasOnDemandMemories) {
+        lines.push('### Past knowledge (read on demand)');
+        lines.push('');
+        lines.push('Available memories from past conversations:');
+        lines.push('');
+        if (hasLessons) {
+          lines.push('- `memories/lessons.md` — Mistakes, corrections, and improvements');
+        }
+        if (hasPatterns) {
+          lines.push('- `memories/patterns.md` — Recurring user needs and effective solution paths');
+        }
+        if (hasGaps) {
+          lines.push('- `memories/gaps.md` — Capability gaps and unresolved requests');
+        }
+        lines.push('');
+        if (hasLessons) {
+          lines.push('On your FIRST response, read `memories/lessons.md` to refresh context.');
+        }
+        if (hasPatterns) {
+          lines.push('Check `memories/patterns.md` when a task feels familiar.');
+        }
+        if (hasGaps) {
+          lines.push('Check `memories/gaps.md` when stuck.');
+        }
+        lines.push('');
+        lines.push('These files are managed by the system — do not edit them.');
+        lines.push('');
+      }
+    }
 
     // Custom section marker — content below this line is preserved across sessions
     // via carry-forward. Agent can add custom rules/instructions below.
@@ -810,9 +842,12 @@ export class WorkspaceManager {
   async writeMemoryFiles(workspacePath: string, scopeId: string, userId?: string): Promise<void> {
     const { scopeMemoryRepository } = await import('../repositories/scope-memory.repository.js');
     const memories = await scopeMemoryRepository.findForContext(scopeId, userId);
-    if (memories.length === 0) return;
-
     const memoriesDir = join(workspacePath, 'memories');
+    if (memories.length === 0) {
+      await rm(memoriesDir, { recursive: true, force: true });
+      return;
+    }
+
     await mkdir(memoriesDir, { recursive: true });
 
     // Group memories by file target
@@ -920,12 +955,10 @@ export class WorkspaceManager {
       const name = safeWorkspaceName(agent.name);
       const description = `${agent.displayName} - ${agent.role ?? 'General assistant'}`;
       const instructions: string[] = [];
-      if (agent.systemPrompt) instructions.push(agent.systemPrompt.trim());
-      if (agent.skillNames.length > 0) {
-        instructions.push(
-          `Relevant project skills are available under .agents/skills: ${agent.skillNames.join(', ')}.`,
-        );
-      }
+      const systemPrompt = stripGeneratedSkillContext(agent.systemPrompt ?? '');
+      const skillContext = renderGeneratedSkillContext(agent.skillNames);
+      if (systemPrompt) instructions.push(systemPrompt);
+      if (skillContext) instructions.push(skillContext);
       const content = [
         `name = ${tomlString(name)}`,
         `description = ${tomlString(description)}`,
@@ -983,6 +1016,10 @@ export class WorkspaceManager {
     // Write scope-level MCP servers so Claude Code discovers them via project settings
     if (mcpServers && mcpServers.length > 0) {
       for (const server of mcpServers) {
+        if (PLATFORM_MANAGED_MCP_NAMES.has(server.name)) {
+          console.warn(`[workspace] Ignoring tenant MCP server with reserved name: ${server.name}`);
+          continue;
+        }
         // Prefer structured config if available
         if (server.config && typeof server.config === 'object') {
           const c = server.config as Record<string, unknown>;
@@ -1040,6 +1077,11 @@ export class WorkspaceManager {
       '# Generated from platform workspace configuration. Do not add provider or auth keys here.',
       'approval_policy = "never"',
       'sandbox_mode = "workspace-write"',
+      '',
+      '[sandbox_workspace_write]',
+      'network_access = false',
+      'exclude_slash_tmp = true',
+      'exclude_tmpdir_env_var = true',
       '',
       '[features]',
       'hooks = true',
@@ -1123,6 +1165,9 @@ export class WorkspaceManager {
     name: string,
     server: MCPServerSDKConfig | null,
   ): Promise<void> {
+    if (PLATFORM_MANAGED_MCP_NAMES.has(name)) {
+      throw new Error(`MCP server name "${name}" is reserved for platform-managed tools`);
+    }
     const workspacePath = this.getSessionWorkspacePath(orgId, scopeId, sessionId);
     const servers = await this.readWorkspaceMcpServers(workspacePath);
     if (server) servers[name] = server;
@@ -1169,6 +1214,11 @@ export class WorkspaceManager {
       codexConfig = [
         'approval_policy = "never"',
         'sandbox_mode = "workspace-write"',
+        '',
+        '[sandbox_workspace_write]',
+        'network_access = false',
+        'exclude_slash_tmp = true',
+        'exclude_tmpdir_env_var = true',
         '',
         '[features]',
         'hooks = true',
@@ -2469,7 +2519,11 @@ function renderCodexMcpServers(
         lines.push(`http_headers = ${tomlInlineStringMap(server.headers)}`);
       }
     }
-    lines.push('required = true', '');
+    lines.push('required = true');
+    if (PLATFORM_MANAGED_MCP_NAMES.has(name)) {
+      lines.push('default_tools_approval_mode = "approve"');
+    }
+    lines.push('');
   }
   return lines.join('\n').trimEnd();
 }

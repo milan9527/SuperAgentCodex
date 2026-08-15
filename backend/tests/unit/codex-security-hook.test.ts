@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -38,6 +38,10 @@ describe('Codex security hook', () => {
 
   it('blocks path and symlink escapes', async () => {
     const workspacePath = await createHookWorkspace();
+    const outsidePath = join(tmpdir(), `codex-hook-outside-${randomUUID()}`);
+    tempPaths.push(outsidePath);
+    await mkdir(outsidePath, { recursive: true });
+    await symlink(outsidePath, join(workspacePath, 'outside-link'));
 
     const escaped = await runHook(workspacePath, {
       cwd: workspacePath,
@@ -47,6 +51,45 @@ describe('Codex security hook', () => {
     expect(escaped).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'deny' },
     });
+
+    const symlinkEscaped = await runHook(workspacePath, {
+      cwd: workspacePath,
+      tool_name: 'apply_patch',
+      tool_input: { path: 'outside-link/secret.txt' },
+    });
+    expect(symlinkEscaped).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+  });
+
+  it('blocks binary text reads and uninstalled skills', async () => {
+    const workspacePath = await createHookWorkspace();
+    await mkdir(join(workspacePath, '.agents', 'skills', 'installed'), { recursive: true });
+
+    const binary = await runHook(workspacePath, {
+      cwd: workspacePath,
+      tool_name: 'Read',
+      tool_input: { file_path: 'report.pdf' },
+    });
+    expect(binary).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+
+    const missingSkill = await runHook(workspacePath, {
+      cwd: workspacePath,
+      tool_name: 'Skill',
+      tool_input: { skill_name: 'missing' },
+    });
+    expect(missingSkill).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'deny' },
+    });
+
+    const installedSkill = await runHook(workspacePath, {
+      cwd: workspacePath,
+      tool_name: 'Skill',
+      tool_input: { skill_name: 'installed' },
+    });
+    expect(installedSkill).toEqual({});
   });
 });
 

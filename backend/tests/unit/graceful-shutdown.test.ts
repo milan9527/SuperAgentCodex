@@ -173,7 +173,7 @@ describe('Graceful Shutdown (onClose hook)', () => {
     const hasShutdownError = errorCalls.some((call) => {
       // Fastify structured logging: first arg is object with err, second is message string
       const msg = typeof call[1] === 'string' ? call[1] : typeof call[0] === 'string' ? call[0] : '';
-      return msg.includes('Claude Agent SDK graceful shutdown');
+      return msg.includes('agent runtime graceful shutdown');
     });
     expect(hasShutdownError).toBe(true);
   });

@@ -25,7 +25,7 @@ import type {
 } from '../schemas/membership.schema.js';
 
 /** Default model for a new org's seeded Bedrock provider (Claude Opus 4.8). */
-const DEFAULT_BEDROCK_MODEL_ID = 'global.anthropic.claude-opus-4-8';
+const DEFAULT_BEDROCK_MODEL_ID = 'openai.gpt-5.4';
 
 /**
  * A membership enriched with the member's profile fields (email/name) for the
@@ -145,7 +145,7 @@ export class OrganizationService {
       organization.id
     );
 
-    // Seed a default Amazon Bedrock provider (Claude Opus 4.8) so the org has a
+    // Seed a default Codex-compatible Amazon Bedrock provider so the org has a
     // working model out of the box — model resolution, the chat picker, and
     // Settings → Models all rely on there being an org-default provider.
     try {
@@ -156,6 +156,7 @@ export class OrganizationService {
         base_url: null,
         credential_id: null,
         default_model_id: DEFAULT_BEDROCK_MODEL_ID,
+        allowed_model_ids: [DEFAULT_BEDROCK_MODEL_ID],
         is_org_default: true,
         status: 'active',
         created_by: userId,

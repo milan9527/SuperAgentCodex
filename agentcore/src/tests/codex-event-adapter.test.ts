@@ -53,6 +53,7 @@ test('maps command tools, usage, and terminal result', () => {
 
   assert.equal(completed.at(-1)?.type, 'result');
   assert.equal(completed.at(-1)?.token_usage?.input_tokens, 10);
+  assert.equal('total_cost_usd' in (completed.at(-1)?.token_usage ?? {}), false);
   assert.equal(completed.at(-1)?.provider_thread_id, 'thread-1');
   assert.equal(completed.at(-1)?.provider_turn_id, 'turn-1');
 });

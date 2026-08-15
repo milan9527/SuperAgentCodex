@@ -98,7 +98,6 @@ export function adaptCodexNotification(
           output_tokens: numberOrZero(usage.outputTokens),
           cache_read_input_tokens: numberOrZero(usage.cachedInputTokens),
           cache_creation_input_tokens: numberOrZero(usage.cacheWriteInputTokens),
-          total_cost_usd: 0,
         };
       }
       return [];

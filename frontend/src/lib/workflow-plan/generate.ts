@@ -2,7 +2,7 @@
  * Workflow Plan Generation
  *
  * Generates workflow plans from natural language descriptions using
- * Claude Agent SDK via SSE streaming (same approach as Scope Generator).
+ * the configured agent runtime via SSE streaming.
  */
 
 import type { WorkflowPlan, WorkflowVariable } from '@/types/workflow-plan';
@@ -151,7 +151,7 @@ function parseWorkflowPlan(text: string): WorkflowPlan {
 
 /**
  * Generate a workflow plan from natural language description.
- * Calls the backend SSE endpoint (Claude Agent SDK) and parses the result.
+ * Calls the backend agent-runtime SSE endpoint and parses the result.
  */
 export async function generateWorkflowPlan(
   options: GenerateWorkflowOptions

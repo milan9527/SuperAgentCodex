@@ -1,7 +1,7 @@
 /**
  * Chat Stream Service
  *
- * SSE client service for streaming chat responses from the Claude Agent SDK backend.
+ * SSE client service for streaming responses from the configured agent runtime.
  * Handles new event types: session_start, assistant (with content blocks), result,
  * heartbeat, and error.
  *

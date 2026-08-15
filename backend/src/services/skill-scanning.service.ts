@@ -275,6 +275,12 @@ export async function scanSkill(
       agentConfig,
       [], // no skills needed for scanning
     )) {
+      if (event.type === 'error') {
+        throw new Error(
+          `Skill scan runtime failed (${event.code ?? 'AGENT_RUNTIME_ERROR'}): `
+          + `${event.message ?? 'unknown error'}`,
+        );
+      }
       // Collect text blocks for fallback extraction
       if ((event.type === 'assistant' || event.type === 'result') && event.content) {
         for (const block of event.content) {

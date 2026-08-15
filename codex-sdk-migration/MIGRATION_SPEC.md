@@ -28,125 +28,300 @@ The implemented target uses:
 - Codex project conventions: `AGENTS.md`, `.agents/skills`,
   `.codex/agents/*.toml`, and `.codex/config.toml`.
 - The Codex `amazon-bedrock` provider when AWS Bedrock is selected.
+- Invocation-level hybrid model routing: Bedrock OpenAI Responses models run
+  natively through Codex/AgentCore, while administrator-approved models from
+  a LiteLLM provider run through the retained Claude Agent SDK adapter.
 
-The Claude runtime remains available during validation and rollback. Existing
-deployed AgentCore Runtimes must not be updated or deleted by this migration.
+Direct Bedrock Claude model IDs are deliberately not sent to Codex. In a
+Codex/AgentCore deployment they fail before turn start with
+`AGENT_MODEL_RUNTIME_UNSUPPORTED`; Claude models must be configured through a
+LiteLLM provider. Existing deployed AgentCore Runtimes must not be updated or
+deleted by this migration.
 
 ### 1.1 Implementation record
 
-As of 2026-08-14:
+As of the detailed audit on 2026-08-14:
 
-- Provider-neutral runtime and event contracts are implemented.
-- Local `CodexAgentRuntime` starts the pinned Codex CLI app-server over JSONL
-  stdio and supports start, resume, bounded history replay, cancellation,
-  images, MCP, hooks, collaboration events, plans, diffs, and token usage.
-- Workspaces now use one runtime-native layout. Codex and AgentCore generate
-  only `AGENTS.md`, `.agents/skills/*`, `.codex/*`, and provider-neutral
-  `.runtime/*`; they no longer emit `CLAUDE.md` or `.claude/*`.
-- Legacy Claude workspaces are migrated lazily and through the repeatable
-  `npm run workspace:migrate:codex` command. The migration merges missing
-  skills, converts Markdown agent definitions to TOML, migrates MCP config,
-  verifies Codex counterparts, and only then removes the inactive layout.
-- AgentCore now runs Codex app-server instead of the Claude Agent SDK.
-- AgentCore workspace restore and final sync are awaited and reconcile S3
-  deletions.
-- The frontend supports image-only submissions, provider-side stop, and
-  runtime-compatible model filtering.
-- A real local app-server E2E against Amazon Bedrock passed with model
-  `openai.gpt-5.4` and response `CODEX_E2E_OK`.
-- `openai.gpt-oss-*-1:0` is intentionally rejected for this path. Those model
-  IDs use Bedrock Invoke/Converse APIs, while Codex's built-in Bedrock provider
-  requires the OpenAI Responses-compatible `/openai/v1/responses` model path.
-- Full backend, frontend, and AgentCore production builds pass.
-- Full automated test suites pass: backend `485/485`, frontend `599/599`, and
-  AgentCore `5/5`.
-- Browser validation passes against the locally running frontend and backend:
-  authentication, runtime-compatible model selection, chat submission,
-  streamed Codex rendering, responsive layout, and zero browser console,
-  page, or request errors.
-- Route-level frontend splitting reduced the initial JavaScript entry from
-  approximately 2.9 MB to 39 KB and the Chat route from approximately 1.05 MB
-  to 168 KB, with no production chunk-size warning.
-- `infra/scripts/deploy-codex-agentcore-new.sh` creates only a new Runtime,
-  dedicated IAM role, immutable ECR tag, and dedicated ECR repository. It has
-  no update/delete path and does not modify backend runtime configuration.
-- The final isolated Runtime
-  `SuperAgentCodexUSEast1Validation20260814-7F4o2oHLij` in `us-east-1`
-  reached `READY` and passed
-  the remote Codex, tool execution, SSE, S3 mirror, and diff validation below.
-- All 16 pre-existing local/S3 session workspaces were migrated to the
-  Codex-only layout with zero failures. The migration preserved 53 skills,
-  removed all `CLAUDE.md`/`.claude/*` keys, and stamped manifest
-  `runtime=codex`, `layoutVersion=2`.
-- A newly provisioned session
-  `dcc1e034-f65e-404e-9a69-d7b97c72c5fc` was validated through the real
-  backend-to-AgentCore path. Codex model `openai.gpt-5.4` created
-  `codex-layout-proof.txt` containing `CODEX_LAYOUT_OK`; local disk, S3, and
-  the workspace API exposed only the Codex layout.
+- Provider-neutral runtime, thread, turn, item, error, usage, and terminal
+  contracts are implemented across chat and non-chat consumers.
+- Local and AgentCore execution both use pinned `codex-cli 0.146.0`
+  app-server over JSONL stdio. The checked-in schema bundle is reproducibly
+  generated and `npm run codex:schema:check` fails on protocol drift.
+- Start, cross-process resume, bounded history replay, explicit interrupt,
+  timeout interrupt, crash recovery, terminal uniqueness, local images, stdio
+  MCP, collaboration/subagents, plans, diffs, and token usage are covered by
+  automated tests and real model runs.
+- App-server requests initiated by the server, including approval requests,
+  are rejected by the unattended platform client. Reserved, audited platform
+  MCP servers may be auto-approved; tenant MCP servers may not impersonate
+  those reserved names.
+- Codex and AgentCore workspaces use only `AGENTS.md`,
+  `.agents/skills/*`, `.codex/*`, and provider-neutral `.runtime/*`.
+  Legacy Claude workspaces are verified, merged, and migrated before
+  `CLAUDE.md` and `.claude/*` are removed.
+- Generated memory instructions are capability-aware. `AGENTS.md` references
+  only memory files backed by current scope/user records; a workspace with no
+  memories has no memory-read instruction, and stale `memories/` directories
+  are removed during refresh. Workspace layout version `3` forces existing
+  sessions to pick up this correction.
+- AgentCore serializes warm-container invocations around the shared mounted
+  workspace, uses a per-platform-session `CODEX_HOME`, restores into a clean
+  workspace, and restores environment variables after each invocation.
+- S3 restore, deletion reconciliation, diff creation, local sync-back, and
+  carry-forward are fail-closed. A terminal success event is not emitted until
+  these operations are acknowledged.
+- Subagent skill guidance is derived from the current agent-to-skill
+  relationship when `.codex/agents/*.toml` is rendered. It is never persisted
+  into the agent business prompt. Carry-forward strips platform-generated
+  guidance before comparison and persistence, preventing repeated
+  `Relevant project skills...` lines across workspace generations.
+- Workspace sync rejects path traversal and symlink escapes independently of
+  model hooks. Codex runs with `workspace-write`; model-initiated network
+  access and writes outside the workspace are blocked.
+- Workflow generation and patching emit server-validated structures.
+  Workflow execution accumulates split progress markers, reports each step
+  exactly once, interrupts on timeout, and never silently falls back from
+  Codex/AgentCore to direct Bedrock.
+- Scope generation, digital-twin generation, skill scanning, mention routing,
+  subagent speaker mapping, and IM event aggregation use the standard runtime
+  contract and propagate runtime errors.
+- Claude plugins are not silently accepted. Under Codex they are reported as
+  unsupported and cannot be newly attached; historical bindings remain
+  removable.
+- The frontend supports image-only submissions, provider-side stop,
+  runtime-compatible model filtering, Codex-native workspace paths, stable
+  SSE terminal metadata, and same-origin API/SSE/WebSocket proxying.
+- Model-provider responses expose the actual invocation target and both the
+  administrator allowlist and its runtime-compatible subset. Chat, Agent, and
+  Scope selectors consume only that subset. The LiteLLM live catalog is
+  admin-only configuration input and is never exposed directly as a Chat
+  model list.
+- Vulnerable `xlsx` was replaced with `read-excel-file`. Safe `.xlsx`
+  multi-sheet preview remains supported; legacy `.xls` and `.xlsb` files are
+  download-only.
+- The backend Docker build is strict, installs pinned Codex CLI, uses an
+  isolated writable `CODEX_HOME`, and retains the Claude CLI only for the
+  explicit rollback window.
+- `infra/scripts/deploy-codex-agentcore-new.sh` is create-only, uses an
+  immutable image tag and dedicated role, and has no Runtime update/delete or
+  backend configuration mutation path.
+- `infra/scripts/deploy-full-ecs.sh` now performs a fail-closed, immutable
+  deployment of the CDK stack, AgentCore Runtime, database migrations, seed,
+  backend ECS service, and frontend CloudFront distribution. A failed phase
+  stops the release. A later run may reuse only an explicitly supplied,
+  validated `READY` Runtime ARN; it never discovers and updates a Runtime by
+  name.
+- The full ECS deployment creates or verifies stack-dedicated AgentCore
+  Browser and Code Interpreter resources. The Browser enables
+  `browserSigning` for Web Bot Auth. Existing resources are reused only after
+  role, network, signing, and readiness validation; the scripts never
+  update or delete them.
+- Existing AgentCore Runtimes were not updated or deleted, and no GitHub push
+  was performed during this audit.
 
 ### 1.2 Validation record
 
-Final isolated AgentCore validation on 2026-08-14:
+Authoritative isolated AgentCore audit Runtime:
 
 - Runtime ARN:
-  `arn:aws:bedrock-agentcore:us-east-1:632930644527:runtime/SuperAgentCodexUSEast1Validation20260814-7F4o2oHLij`
+  `arn:aws:bedrock-agentcore:us-east-1:632930644527:runtime/SuperAgentCodexAudit20260814C-gTn0nOGpPv`
 - Runtime version/status: `1`, `READY`
 - Immutable image:
-  `632930644527.dkr.ecr.us-east-1.amazonaws.com/super-agent-agentcore-codex:codex-use1-202608140215`
+  `632930644527.dkr.ecr.us-east-1.amazonaws.com/super-agent-agentcore-codex:codex-audit-20260814c`
 - Image digest:
-  `sha256:8fec0efe001db8e8bf65a433534c98bceffcf2d825f0fb9397a22d93da3c7236`
-- Container: ARM64, 11 filesystem layers, numeric user `1000:1000`, pinned
-  `codex-cli 0.146.0`
-- Bedrock model/Region: `openai.gpt-5.4`, `us-east-1`
+  `sha256:92efd4ac6379a2bba1ed7d3c0a14ed1b021027d5e998b2c72a833b15760c3e59`
+- Runtime Region/model: `us-east-1`, `openai.gpt-5.4`
 - Workspace bucket/Region:
   `superagentdev9-workspace-632930644527`, `us-east-1`
-- Provider thread:
-  `019ffe0e-43b6-7071-9c50-3ee3abf6a9d0`
-- Provider turn:
-  `019ffe0e-43d6-7df1-9415-4d2deb18e75c`
-- Assistant assertion: `CODEX_AGENTCORE_E2E_OK`
-- Workspace assertion:
-  `codex-validation/use1-final-20260814/codex-agentcore-proof.txt` contained
-  `CODEX_AGENTCORE_FILE_OK`
-- Diff assertion:
-  `codex-validation/use1-final-20260814/__diff__.json` reported one added file,
-  one insertion, and a patch containing `codex-agentcore-proof.txt`
-- The Runtime execution role includes `bedrock-mantle:CreateInference`, which
-  is required by Codex's Bedrock OpenAI Responses path in addition to the
-  legacy Bedrock invoke permissions.
-- Backend runtime configuration was not changed.
-- Existing `SuperAgentRuntime-CY9MAr6l5M` and
-  `SuperAgentDev9Runtime-6SzVHpBKNJ` in `us-east-1` remained `READY` with their
-  original versions, images, and update timestamps. No existing Runtime was
-  updated or deleted.
-- The earlier `us-west-2` validation remains a historical record only. The
-  migration deployment and smoke-test defaults now target `us-east-1`.
+- Runtime metadata requires MMDSv2. The execution role includes
+  `bedrock-mantle:CreateInference` for the Bedrock OpenAI Responses path.
+- Backend default runtime configuration was not changed.
 
-Repository-wide validation completed on 2026-08-14:
+Repository and container gates after subagent context normalization:
 
-- Backend: production build passed; `40` test files and `484/484` tests passed.
-- Frontend: production build passed; `45` test files and `599/599` tests
-  passed.
-- AgentCore: production build passed; `5/5` tests passed.
-- Local Codex app-server E2E passed in `us-east-1` with provider thread
-  `019ffe38-0f99-7cb2-8bc1-c0c07539863f`, provider turn
-  `019ffe38-0fd3-77f0-9eff-6c3402dd3145`, and response `CODEX_E2E_OK`.
-- Remote AgentCore E2E passed with session
-  `codex-agentcore-e2e-65f1b593-a21e-4067-a1b0-5ededc54f788`,
-  provider thread `019ffe38-37ca-7b80-9408-fedcfd843cc8`, provider turn
-  `019ffe38-37e7-7512-adfd-3390c875ddfc`, response
-  `CODEX_AGENTCORE_E2E_OK`, and S3 proof `CODEX_AGENTCORE_FILE_OK`.
-- Local browser smoke passed against `http://localhost:5173` and backend
-  `http://localhost:3001`; desktop and mobile layouts had no horizontal
-  overflow.
-- ESLint has no blocking errors. It still reports non-blocking legacy warnings
-  for broad `any` usage, missing explicit return annotations, and unused
-  symbols. Those warnings are tracked as cleanup debt rather than release
-  failures.
+- Backend production build and `531/531` automated tests passed.
+- Frontend production build and `602/602` automated tests passed.
+- AgentCore production build and `17/17` automated tests passed.
+- Backend and frontend ESLint blocking-error checks passed.
+- Backend, frontend, and AgentCore full dependency audits each report
+  `0 vulnerabilities`.
+- The strict backend container build passed. The resulting image runs as a
+  non-root user with Node `20.20.2`, `codex-cli 0.146.0`, writable isolated
+  `CODEX_HOME`, and loadable Sharp native bindings.
+- Codex app-server schema comparison passed against the bundle generated by
+  `codex-cli 0.146.0`.
 
-The code and functional gates are green. Codex must still pass the controlled
-shadow, canary, SLO, and rollback exercises in Section 32 before it becomes the
-production default.
+Real local Codex app-server audit:
+
+- Amazon Bedrock model `openai.gpt-5.4` in `us-east-1` passed.
+- Real stdio MCP lifecycle and filesystem side effect passed.
+- The same provider thread resumed after the app-server process was replaced.
+- A real PNG sent as `localImage` was interpreted correctly.
+- Terminal-event uniqueness and workspace-write behavior passed.
+- Audit provider thread:
+  `019ffe97-ec28-7aa0-a606-e5682c33e798`.
+
+Real AgentCore Runtime C audit:
+
+- Base chat, Bash/file tools, S3 proof, diff, deletion reconciliation, and
+  `workspace_sync` before the unique terminal event passed.
+- Image input passed.
+- Writes outside `/workspace` and model-initiated network access were blocked.
+- Managed Browser and Code Interpreter MCP tools completed successfully.
+- HTTP cancellation interrupted the active turn; the same provider thread
+  then opened a successful recovery turn.
+- Workflow progress MCP ran from the container runtime asset. Execution
+  produced exactly one `step_start`, one `step_complete`, one `done`, zero
+  errors, and no fallback.
+- Mention/subagent execution emitted spawn, child-thread, wait, and mapped
+  speaker events rather than degrading to a main-agent-only response.
+- Workflow generation preserved `humanApproval`; workflow patch generation
+  produced server-validated `updateTitle` and `relayout` operations.
+- Scope generation, digital-twin generation, and file-backed skill scanning
+  completed through the real Runtime. The temporary audit records were
+  removed after validation.
+
+Real platform/browser audit:
+
+- An isolated backend on port `3002` was configured for Runtime C, with a Vite
+  frontend on port `5174` proxying to it. No persistent backend configuration
+  was changed.
+- Real login, model selection, session creation, streamed chat, tool events,
+  provider thread/turn metadata, terminal status, persistence, and workspace
+  APIs passed.
+- The final browser run returned `42` successful business API responses,
+  rendered the assistant marker, had no desktop or mobile horizontal overflow,
+  and reported zero console, page, request, or non-2xx API errors.
+
+Real hybrid model-routing audit:
+
+- The LiteLLM provider live catalog returned `14` models, including
+  `claude-sonnet-4.6` and multiple Claude Opus variants.
+- Admin Settings persisted only `claude-opus-4.8` in the LiteLLM provider
+  allowlist. The browser Chat picker displayed that model and
+  `openai.gpt-5.4`, without leaking the remaining live catalog or direct
+  Bedrock Claude providers.
+- A direct API request for unapproved `claude-sonnet-4.6` failed before
+  runtime start with HTTP `400 VALIDATION_ERROR`.
+- `bedrock/us.anthropic.claude-sonnet-4-6` completed through the Claude Agent
+  SDK with exact response `CLAUDE_TURN_ONE_OK`.
+- A second turn resumed the same native Claude session
+  `fb998ad3-2217-4743-8368-aa97d64ad5c5` and returned
+  `CLAUDE_RESUME_OK`.
+- A deliberately unavailable native Claude session produced a zero-turn resume
+  failure. The adapter suppressed that stale terminal, replayed bounded
+  platform history, opened replacement session
+  `845fcf40-ab39-4f68-b4d1-5289e7085dc8`, and returned
+  `LITELLM_FALLBACK_OK`.
+- The same platform chat session then switched to Bedrock
+  `openai.gpt-5.4`; AgentCore returned `CODEX_SWITCH_OK` and received four
+  bounded platform-history messages for cross-runtime continuity.
+- Persistence retained the Claude session/model separately while updating the
+  active provider runtime and Codex thread. The workspace remained
+  `AGENTS.md`/`.agents`/`.codex` only, and the host `~/.claude.json` was not
+  modified because each Claude invocation uses an isolated config directory.
+- Direct Bedrock Claude selection failed before turn start with HTTP `400` and
+  `AGENT_MODEL_RUNTIME_UNSUPPORTED`, directing the caller to LiteLLM.
+- Existing polluted subagent prompts were normalized atomically in the
+  database, bumping affected scope configuration versions. Historical local
+  and S3 agent TOML snapshots were normalized to one current skill-guidance
+  line; a second cleanup pass changed zero files. Re-running carry-forward on
+  the original affected session produced no agent changes and left both
+  database prompts with zero generated guidance lines.
+
+Real `us-east-1` ECS deployment audit:
+
+- A new CloudFormation stack named `SuperAgentCodex` reached
+  `UPDATE_COMPLETE`. It did not replace or mutate an existing application
+  stack.
+- Public application URL:
+  `https://d3to1tdi7o7lzs.cloudfront.net`.
+- The current AgentCore Runtime is
+  `arn:aws:bedrock-agentcore:us-east-1:632930644527:runtime/SuperAgentCodexStream20260814-f9rR60E6i0`.
+  It is `READY` and uses immutable image
+  `632930644527.dkr.ecr.us-east-1.amazonaws.com/super-agent-agentcore-codex:codex-20260814102650-53e1708`
+  with digest
+  `sha256:8da370c362cc3629b37dec8bbd5d1f491923769b8be753ccf01baf8ca8fcfbd9`.
+- ECS runs immutable backend image
+  `632930644527.dkr.ecr.us-east-1.amazonaws.com/super-agent-backend-superagentcodex:backend-20260814102814-53e1708`
+  with digest
+  `sha256:a5df34ff186f29579f5cd59f985d9814b2644eca6859a5900557a0264e4eb484`.
+  The service is `1/1`, the task and container are healthy, and the ALB target
+  and `/health/ready` are healthy.
+- The first database migration task failed because the production image did
+  not contain Prisma 7's `prisma.config.ts`. The deployment stopped before
+  seed or ECS publication. The Docker image was fixed, validated with
+  `prisma validate`, and the same stack safely resumed using the explicit
+  `READY` Runtime ARN. Migrations and seed then completed successfully.
+- RDS PostgreSQL `16.14` is private, encrypted, available, and retains seven
+  days of backups. Redis `7.1.0` is available and uses an in-sync custom
+  parameter group with `maxmemory-policy=noeviction`; a fresh backend task
+  initialized Redis and all queues without BullMQ eviction warnings.
+- Workspace, skills, avatar, and frontend S3 buckets are in `us-east-1`, use
+  server-side encryption, and have all four Block Public Access settings
+  enabled.
+- Direct Runtime E2E passed with `openai.gpt-5.4`, Bash/file tools, S3 proof,
+  diff, and terminal ordering. A second E2E through
+  CloudFront -> ECS -> AgentCore returned exact marker
+  `DEPLOYED_CODEX_CHAT_OK`, persisted provider thread/turn metadata, and wrote
+  `DEPLOYED_CODEX_FILE_OK` into the new workspace bucket. The resulting
+  workspace contained only the Codex layout.
+- Existing AgentCore Runtimes were not updated or deleted during this
+  deployment.
+- The deployed ECS task now uses dedicated tools rather than the shared
+  managed identifiers:
+  `SuperAgentCodex_browser_webauth-fE2H1Jk9Cb` and
+  `SuperAgentCodex_code_interpreter-H5bXUddPM2`. Both are `READY`, use the
+  stable tool execution role and PUBLIC networking; Browser Web Bot Auth
+  signing is enabled. Immutable Runtime versions may use a different Runtime
+  execution role as long as that role is authorized to invoke the tools.
+- `agentcore-tools` is wrapped by a platform stdio policy proxy. The proxy
+  narrows the MCP `tools/list` schemas to the dedicated identifiers and
+  overwrites any model-supplied `aws.browser.v1` or
+  `aws.codeinterpreter.v1` value at `tools/call`. A real Browser session
+  returned the dedicated identifier in both tool input and tool result.
+- Chat SSE now coalesces adjacent text-only Codex deltas for at most `60 ms`
+  or `32` characters. Tool, result, error, heartbeat, speaker-change, and
+  terminal boundaries flush immediately. In a real Chinese response, the
+  platform emitted `14` text events with chunk lengths mostly between `6`
+  and `36` characters and only one single-character boundary event, while
+  preserving Browser tool ordering and one completed terminal event.
+- The same live turn successfully read `memories/lessons.md`; the tool result
+  contained the expected lesson and `is_error=false`. Memory references are
+  therefore present only when the corresponding generated file is available
+  to the Runtime.
+- A new Marketing session with zero scope memories generated `AGENTS.md`
+  without a `## Memory` section or `memories/lessons.md` reference. A real
+  platform turn then used Code Interpreter start/execute/stop and Browser
+  start/navigate/stop, returned
+  `CODE=83810205;TITLE=Example Domain`, completed successfully, and emitted no
+  memory-file probe.
+
+Conditional deployment findings:
+
+- The deployed RDS instance is single-AZ and does not have deletion protection
+  enabled. Its stack removal policy creates a snapshot, but production policy
+  should decide whether to enable deletion protection and Multi-AZ.
+- The deployed single-node Redis cluster does not use transit or at-rest
+  encryption. Enabling either requires an explicitly planned client and
+  replacement migration; it was not changed implicitly during validation.
+- S3 versioning is not enabled. Public access remains blocked and server-side
+  encryption is enabled, but retention/versioning policy must be decided
+  before production data is treated as durable.
+- The backend currently runs Node `20.20.2`. AWS SDK v3 reports that releases
+  published after the first week of January 2027 will require Node 22, so the
+  runtime image must move to Node 22 before that support boundary.
+- Two enabled Slack records are test fixtures without a token or webhook.
+  Standard IM event aggregation and fail-closed adapter behavior pass automated
+  tests, but external Slack delivery cannot be claimed without valid test
+  credentials.
+- No enabled A2A deployment object exists; its code contract is covered, but
+  there is no deployed peer for an external interoperability E2E.
+- Codex-specific AWS Evaluate acceptance is not part of the current launch
+  SLO. It must remain disabled or be separately validated before inclusion.
+- Shadow comparison, production canary observation, SLO acceptance, and a
+  rollback exercise have not been performed. Gate G therefore remains open,
+  and Codex must not yet become the production default.
 
 ## 2. Decision
 
@@ -218,12 +393,14 @@ Use an expand-and-contract migration:
 - Preserve telemetry for turns, tools, token usage, errors, and latency.
 - Support OpenAI models through Codex, including documented Bedrock-hosted
   OpenAI models.
+- Support Claude and other Anthropic-compatible models exposed by an
+  organization LiteLLM gateway through the retained Claude adapter.
 - Permit per-organization and per-request runtime canaries.
 
 ## 4. Non-Goals
 
 - Rewriting the frontend during the first compatibility phase.
-- Preserving arbitrary Anthropic-protocol model compatibility.
+- Sending direct Bedrock Claude model IDs through Codex.
 - Making Claude plugins execute unchanged under Codex.
 - Renaming every historical Claude reference before Codex is proven.
 - Migrating unrelated direct Bedrock calls such as embeddings or specialized
@@ -246,6 +423,7 @@ chat.service
 AgentRuntime
     |-- ClaudeAgentRuntime
     |-- AgentCoreAgentRuntime
+    |-- ModelRoutingAgentRuntime
     |-- OpenClawAgentRuntime
     `-- BerriAIAgentRuntime
 ```
@@ -615,7 +793,28 @@ The initial Codex runtime must reject unsupported model/provider combinations
 before starting a turn. Do not send unsupported model IDs and rely on upstream
 failure.
 
-### 11.4 Model picker
+### 11.4 LiteLLM Claude routing
+
+In a Codex or AgentCore deployment, runtime selection is per invocation:
+
+| Provider/model | Runtime |
+| --- | --- |
+| Bedrock `openai.gpt-5*` | Codex or AgentCore primary runtime |
+| Admin-approved LiteLLM model | Claude Agent SDK adapter |
+| Direct Bedrock Claude or another unsupported Bedrock model | Reject before turn start |
+
+The Claude adapter receives the selected LiteLLM base URL, decrypted API key,
+and model name only for the invocation. It uses a session-isolated Claude
+configuration directory, disables project/user setting discovery, injects
+`AGENTS.md`, `.agents/skills`, and programmatic subagents, and does not create
+`CLAUDE.md` or `.claude/*` in the canonical workspace.
+
+Chat, IM, Canvas Agent nodes, and V2 Workflow execution resolve the actual
+runtime from the selected request, agent, or scope model. Native provider
+threads are resumed only by their owning runtime; switching runtime uses
+bounded platform-history replay and retains the other runtime's thread fields.
+
+### 11.5 Model picker
 
 Add runtime capability metadata to model-provider responses:
 
@@ -631,8 +830,11 @@ interface RuntimeModelCapability {
 }
 ```
 
-The frontend should display only combinations supported by the selected
-runtime.
+The frontend displays only models present in the provider's
+`allowed_model_ids` and compatible with the selected runtime. The backend
+resolver enforces the same allowlist, so a caller cannot bypass it through a
+direct API request. Live LiteLLM and Bedrock catalogs are available only to
+administrators configuring a provider.
 
 ## 12. Security and Approvals
 
@@ -789,7 +991,7 @@ Map Codex failures to stable platform errors:
 | Codex condition | Platform code |
 | --- | --- |
 | Authentication failure | `AGENT_AUTH_ERROR` |
-| Unsupported model/provider | `AGENT_MODEL_UNSUPPORTED` |
+| Unsupported model/provider combination | `AGENT_MODEL_RUNTIME_UNSUPPORTED` |
 | Usage limit | `AGENT_USAGE_LIMIT` |
 | Context window exceeded | `AGENT_CONTEXT_LIMIT` |
 | Sandbox denial | `AGENT_PERMISSION_DENIED` |
@@ -1157,7 +1359,7 @@ Status values used below:
 | AgentCore continuity | Bounded DB history injection | Attempt Codex resume, retain bounded history fallback | Recycled microVM test | DESIGN |
 | AgentCore telemetry | Hand-built Claude instrumentation scope/provider | Codex-specific validated scope or replacement evaluator pipeline | AWS Evaluate acceptance test | BLOCKED |
 | Bedrock models | Arbitrary catalog through direct/proxy routes | Exact Codex-supported OpenAI model IDs only | Startup capability probe | DESIGN |
-| LiteLLM arbitrary models | Anthropic-compatible remapping | Not part of initial Codex contract | Reject before turn start | UNSUPPORTED |
+| LiteLLM models | Anthropic-compatible remapping | Invocation-level Claude adapter routing with isolated config and canonical Codex workspace | Live catalog, native Claude resume, Claude-to-Codex switch | VALIDATED |
 | AgentCore browser/code interpreter | Injected MCP server | Preserve as Codex MCP server and validate IAM | Tool E2E tests | VALIDATE |
 | Memory/documents/apps | Workspace conventions and prompts | Same business behavior through layout abstraction | Domain E2E suite | DESIGN |
 | Carry-forward | Reads Claude paths and formats | Read selected runtime layout; parse TOML agents/config/hooks | Round-trip and conflict tests | DESIGN |
@@ -1436,6 +1638,12 @@ The final sync protocol must be explicit:
 8. Only then emit the terminal invocation event or a terminal sync error.
 9. Backend syncs local cache and starts carry-forward.
 
+Carry-forward treats organization-level or other-scope skills as immutable
+conflicts and skips them. Existing scope-owned skills are written back to the
+`s3_bucket` recorded on their database row, never to an unrelated process
+default. This prevents a missing default bucket from turning a successful Chat
+turn into a false terminal failure.
+
 Upload-only traversal leaves deleted S3 objects behind. The sync
 implementation must compare the final local manifest with the remote manifest
 and issue `DeleteObject` for stale keys, excluding protected metadata.
@@ -1646,6 +1854,18 @@ default it off for Codex parity tests.
 ## 32. Release Gates
 
 Codex must not become the default until every gate below is green.
+
+Audit status on 2026-08-14:
+
+| Gate | Status | Evidence / remaining condition |
+| --- | --- | --- |
+| A: Protocol | GREEN | Pinned schema, unknown/server-request handling, start/resume/interrupt/recovery, ownership, and terminal uniqueness passed. |
+| B: User-visible chat | GREEN | Text, coalesced streaming deltas, tools, errors, stop, persistence, images, mention/subagent, and real browser validation passed. |
+| C: Workspaces | GREEN | Codex-only layout, migration, carry-forward round-trip, MCP/hooks/skills/agents, sync, and explicit unsupported plugin status passed. |
+| D: Non-chat consumers | CONDITIONAL | Workflow, scope, twin, skill scan, node execution, and IM contracts passed. External Slack delivery awaits valid credentials for the existing test fixtures. No enabled A2A peer exists. |
+| E: Security | GREEN | Sandbox, network, path/symlink, approval, secret, synchronization, and warm-container isolation tests passed locally and on Runtime C. |
+| F: AgentCore | GREEN WITH EXCLUSION | Model/Region, dedicated Browser/Code Interpreter enforcement, cancellation, S3/diff/carry-forward ordering passed. AWS Evaluate remains excluded from the launch SLO until separately validated. |
+| G: Rollout | DEPLOYED / OPEN | A new isolated `us-east-1` ECS stack and create-only AgentCore Runtime passed direct and full-platform E2E. Production shadow comparison, canary observation, SLO acceptance, hardening decisions, and rollback exercise remain required. |
 
 ### Gate A: Protocol
 

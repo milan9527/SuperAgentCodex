@@ -29,6 +29,7 @@ export interface WorkflowWorkspaceResult {
   agents: Array<{ id: string; name: string; displayName: string; role: string | null }>;
   skills: SkillForWorkspace[];
   scopeSkillNames: string[];
+  scopeSettings: unknown;
 }
 
 /**
@@ -124,6 +125,7 @@ export async function provisionWorkflowWorkspace(
     agents: agents.map(a => ({ id: a.id, name: a.name, displayName: a.display_name, role: a.role })),
     skills: Array.from(skillMap.values()),
     scopeSkillNames: Array.from(skillMap.values()).map(s => s.name),
+    scopeSettings: scope.settings,
   };
 }
 

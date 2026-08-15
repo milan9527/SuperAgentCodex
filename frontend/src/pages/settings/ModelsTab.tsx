@@ -16,6 +16,7 @@ const EMPTY_FORM: CreateModelProviderInput = {
   base_url: '',
   api_key: '',
   default_model_id: '',
+  allowed_model_ids: [],
   is_org_default: false,
 }
 
@@ -31,15 +32,17 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
   const [formModels, setFormModels] = useState<ModelOption[]>([])
   const [formModelsLoading, setFormModelsLoading] = useState(false)
 
-  // Load the model list for the form's current provider type (live for bedrock;
-  // for litellm requires base_url + api_key to be filled).
+  // Live catalogs are admin-only configuration inputs. Chat never calls this
+  // endpoint; it receives only the saved allowed model ids.
   const loadFormModels = async (refresh = false) => {
     setFormModelsLoading(true)
     try {
       if (form.type === 'bedrock') {
         setFormModels(await modelProviderService.listBedrockModels({ refresh }))
+      } else if (editingId) {
+        setFormModels(await modelProviderService.listModels(editingId, { refresh }))
       } else {
-        setFormModels([]) // litellm: models are listed after the provider is saved
+        setFormModels([])
       }
     } catch {
       setFormModels([])
@@ -53,7 +56,7 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
     if (!showForm) return
     void loadFormModels(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showForm, form.type])
+  }, [showForm, form.type, editingId])
 
   const load = async () => {
     setLoading(true)
@@ -85,6 +88,7 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
       base_url: p.baseUrl ?? '',
       api_key: '', // write-only; blank keeps the existing key
       default_model_id: p.defaultModelId ?? '',
+      allowed_model_ids: p.allowedModelIds,
       is_org_default: p.isOrgDefault,
     })
     setShowForm(true)
@@ -108,6 +112,7 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
             ? { api_key: form.api_key.trim() }
             : {}),
           default_model_id: form.default_model_id?.trim() || null,
+          allowed_model_ids: form.allowed_model_ids ?? [],
           is_org_default: form.is_org_default,
         })
       } else {
@@ -117,6 +122,11 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
           base_url: form.type === 'litellm' ? form.base_url?.trim() || null : null,
           api_key: form.type === 'litellm' ? form.api_key?.trim() || null : null,
           default_model_id: form.default_model_id?.trim() || null,
+          allowed_model_ids: form.allowed_model_ids?.length
+            ? form.allowed_model_ids
+            : form.default_model_id?.trim()
+              ? [form.default_model_id.trim()]
+              : [],
           is_org_default: form.is_org_default,
         })
       }
@@ -157,13 +167,59 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
     }
   }
 
-  // litellm providers require both a base_url and an explicit model id — chat
-  // uses that specific model rather than listing the gateway's whole catalog.
+  const allowedModelIds = form.allowed_model_ids ?? []
   const canSubmit =
     form.name.trim().length > 0 &&
-    (form.type === 'bedrock'
-      ? true
-      : (form.base_url?.trim().length ?? 0) > 0 && (form.default_model_id?.trim().length ?? 0) > 0)
+    (form.type !== 'litellm' || (form.base_url?.trim().length ?? 0) > 0) &&
+    allowedModelIds.length > 0 &&
+    !!form.default_model_id &&
+    allowedModelIds.includes(form.default_model_id)
+
+  const updateDefaultModel = (modelId: string) => {
+    setForm(current => {
+      const currentAllowed = current.allowed_model_ids ?? []
+      const shouldReplaceSingleDefault =
+        currentAllowed.length === 0 ||
+        (currentAllowed.length === 1 && currentAllowed[0] === current.default_model_id)
+      return {
+        ...current,
+        default_model_id: modelId,
+        allowed_model_ids: shouldReplaceSingleDefault
+          ? modelId ? [modelId] : []
+          : currentAllowed,
+      }
+    })
+  }
+
+  const toggleAllowedModel = (modelId: string) => {
+    setForm(current => {
+      const currentAllowed = current.allowed_model_ids ?? []
+      const allowed = currentAllowed.includes(modelId)
+        ? currentAllowed.filter(id => id !== modelId)
+        : [...currentAllowed, modelId]
+      const defaultModel = allowed.includes(current.default_model_id ?? '')
+        ? current.default_model_id
+        : allowed[0] ?? ''
+      return {
+        ...current,
+        allowed_model_ids: allowed,
+        default_model_id: defaultModel,
+      }
+    })
+  }
+
+  const selectableModels = Array.from(
+    new Map(
+      [
+        ...formModels,
+        ...allowedModelIds.map(modelId => ({
+          id: modelId,
+          litellm_model: modelId,
+          provider: form.type,
+        })),
+      ].map(model => [model.litellm_model, model]),
+    ).values(),
+  )
 
   return (
     <div className="max-w-3xl">
@@ -249,8 +305,8 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
           )}
           <div className="block text-xs text-gray-400">
             <div className="flex items-center justify-between">
-              <span>{form.type === 'litellm' ? t('models.modelIdRequired') : t('models.defaultModelId')}</span>
-              {form.type === 'bedrock' && (
+              <span>{t('models.allowedModels')}</span>
+              {(form.type === 'bedrock' || editingId) && (
                 <button
                   type="button"
                   onClick={() => loadFormModels(true)}
@@ -264,27 +320,71 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
               )}
             </div>
             {formModels.length > 0 ? (
+              <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-700 bg-gray-900 p-2 space-y-1">
+                {selectableModels.map(model => (
+                  <label
+                    key={model.litellm_model}
+                    className="flex items-center gap-2 px-2 py-1.5 text-xs text-gray-300 hover:bg-gray-800"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={allowedModelIds.includes(model.litellm_model)}
+                      onChange={() => toggleAllowedModel(model.litellm_model)}
+                    />
+                    <span className="font-mono break-all">{model.litellm_model}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <textarea
+                value={allowedModelIds.join('\n')}
+                onChange={(event) => {
+                  const ids = event.target.value
+                    .split(/[\n,]/)
+                    .map(id => id.trim())
+                    .filter(Boolean)
+                  setForm(current => ({
+                    ...current,
+                    allowed_model_ids: ids,
+                    default_model_id: ids.includes(current.default_model_id ?? '')
+                      ? current.default_model_id
+                      : ids[0] ?? '',
+                  }))
+                }}
+                rows={3}
+                className="mt-1 w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white text-sm font-mono"
+                placeholder={form.type === 'bedrock' ? 'openai.gpt-5.4' : 'claude-sonnet-4.6'}
+              />
+            )}
+            {!editingId && form.type === 'litellm' && (
+              <span className="mt-1 block text-[11px] text-gray-500">
+                {t('models.allowedModelsCreateHint')}
+              </span>
+            )}
+          </div>
+          <label className="block text-xs text-gray-400">
+            {t('models.defaultModelId')}
+            {allowedModelIds.length > 0 ? (
               <select
                 value={form.default_model_id ?? ''}
-                onChange={(e) => setForm({ ...form, default_model_id: e.target.value })}
+                onChange={(event) => updateDefaultModel(event.target.value)}
                 className="mt-1 w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white text-sm font-mono"
               >
-                <option value="">{t('models.defaultModelNone')}</option>
-                {formModels.map((m) => (
-                  <option key={m.litellm_model} value={m.litellm_model}>
-                    {m.litellm_model}
+                {allowedModelIds.map(modelId => (
+                  <option key={modelId} value={modelId}>
+                    {modelId}
                   </option>
                 ))}
               </select>
             ) : (
               <input
                 value={form.default_model_id ?? ''}
-                onChange={(e) => setForm({ ...form, default_model_id: e.target.value })}
+                onChange={(event) => updateDefaultModel(event.target.value)}
                 className="mt-1 w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white text-sm font-mono"
-                placeholder={form.type === 'bedrock' ? (formModelsLoading ? 'Loading…' : 'us.anthropic.claude-opus-4-8') : 'claude-opus-4.8'}
+                placeholder={form.type === 'bedrock' ? 'openai.gpt-5.4' : 'claude-sonnet-4.6'}
               />
             )}
-          </div>
+          </label>
           <label className="flex items-center gap-2 text-xs text-gray-300">
             <input
               type="checkbox"
@@ -336,6 +436,7 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
                   <div className="text-xs text-gray-500 truncate">
                     {p.type === 'litellm' ? p.baseUrl : 'Amazon Bedrock'}
                     {p.defaultModelId ? ` · ${p.defaultModelId}` : ''}
+                    {` · ${p.allowedModelIds.length} ${t('models.allowedCount')}`}
                     {p.type === 'litellm' && p.hasApiKey ? ' · 🔑' : ''}
                   </div>
                 </div>

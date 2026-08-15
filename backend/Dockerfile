@@ -36,7 +36,7 @@ RUN apk add --no-cache openssl
 COPY --from=deps /app/node_modules ./node_modules
 
 # Copy source files
-COPY package.json package-lock.json tsconfig.json ./
+COPY package.json package-lock.json tsconfig.json prisma.config.ts ./
 COPY prisma ./prisma
 COPY src ./src
 
@@ -54,9 +54,8 @@ COPY industry-packs-build ./industry-packs-build
 # Generate Prisma client
 RUN npx prisma generate
 
-# Build TypeScript (relaxed flags to match deploy.sh behavior)
-RUN npx tsc --noUnusedLocals false --noUnusedParameters false --strict false --noImplicitAny false --strictNullChecks false || true
-RUN test -f dist/index.js || (echo "ERROR: tsc failed, dist/index.js not found" && exit 1)
+# Build TypeScript with the same strict gate used by local development and CI.
+RUN npm run build
 
 # -----------------------------------------------------------------------------
 # Stage 3: Production
@@ -79,15 +78,17 @@ COPY package.json package-lock.json ./
 # Install production dependencies only
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Install Claude Code CLI globally so the binary is available on PATH
-# Required by ClaudeAgentService to spawn Claude Code subprocesses
-RUN npm install -g @anthropic-ai/claude-code
+# Keep the Claude CLI for rollback and pin the Codex CLI used by the local
+# Codex app-server runtime.
+RUN npm install -g @anthropic-ai/claude-code @openai/codex@0.146.0
 
 # Create workspace directory for agent workspaces
-RUN mkdir -p /app/workspaces && chown backend:nodejs /app/workspaces
+RUN mkdir -p /app/workspaces /home/backend/.codex && \
+    chown -R backend:nodejs /app/workspaces /home/backend
 
 # Copy Prisma schema and generated client
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
@@ -118,6 +119,7 @@ EXPOSE 3000
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
+ENV CODEX_HOME=/home/backend/.codex
 
 # Health check - uses the /health endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

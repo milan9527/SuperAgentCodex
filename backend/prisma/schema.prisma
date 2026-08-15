@@ -1723,6 +1723,7 @@ model model_providers {
   base_url         String?  @db.VarChar(1024) // litellm only
   credential_id    String?  @db.Uuid // FK → credential_vault (litellm api_key); null for bedrock
   default_model_id String?  @db.VarChar(255)
+  allowed_model_ids String[] @default([])
   is_org_default   Boolean  @default(false)
   status           String   @default("active") @db.VarChar(50)
   created_by       String?  @db.Uuid

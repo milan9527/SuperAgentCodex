@@ -100,7 +100,6 @@ export function adaptCodexNotification(
           outputTokens: numberOrZero(last.outputTokens),
           cacheReadInputTokens: numberOrZero(last.cachedInputTokens),
           cacheCreationInputTokens: numberOrZero(last.cacheWriteInputTokens),
-          totalCostUsd: 0,
         };
       }
       return [];

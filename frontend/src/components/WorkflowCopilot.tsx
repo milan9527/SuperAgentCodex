@@ -77,7 +77,7 @@ interface WorkflowCopilotProps {
 // ---------------------------------------------------------------------------
 
 interface SSEChunk {
-  type: 'text' | 'tool_use' | 'tool_result' | 'result' | 'error' | 'validated_plan'
+  type: 'text' | 'tool_use' | 'tool_result' | 'result' | 'error' | 'validated_plan' | 'validated_patches'
   text?: string
   error?: string
   toolName?: string
@@ -87,6 +87,7 @@ interface SSEChunk {
   durationMs?: number
   numTurns?: number
   plan?: WorkflowPlan
+  patches?: WorkflowPatch[]
 }
 
 async function* streamSSE(
@@ -139,6 +140,10 @@ async function* streamSSE(
         }
         if (event.type === 'validated_plan' && event.plan) {
           yield { type: 'validated_plan', plan: event.plan }
+          continue
+        }
+        if (event.type === 'validated_patches' && Array.isArray(event.patches)) {
+          yield { type: 'validated_patches', patches: event.patches }
           continue
         }
         if ((event.type === 'assistant') && event.content && Array.isArray(event.content)) {
@@ -590,6 +595,7 @@ export const WorkflowCopilot = forwardRef<WorkflowCopilotHandle, WorkflowCopilot
         if (!onGenerateWorkflow) throw new Error('Modification not available')
 
         const currentPlan = canvasDataToWorkflowPlan(canvasData!, workflowName || 'Workflow')
+        let validatedPatches: WorkflowPatch[] | null = null
 
         for await (const chunk of streamSSE('/api/workflows/modify', {
           currentPlan,
@@ -607,6 +613,9 @@ export const WorkflowCopilot = forwardRef<WorkflowCopilotHandle, WorkflowCopilot
           if (chunk.type === 'tool_result') {
             appendStep(assistantId, { type: 'tool_result', content: chunk.toolContent ?? null, isError: chunk.isError ?? false })
           }
+          if (chunk.type === 'validated_patches' && chunk.patches) {
+            validatedPatches = chunk.patches
+          }
         }
 
         // Check if the response contains JSON patches or is a conversational reply
@@ -615,7 +624,7 @@ export const WorkflowCopilot = forwardRef<WorkflowCopilotHandle, WorkflowCopilot
 
         if (looksLikeJson) {
           try {
-            const patches = parsePatches(accumulatedText)
+            const patches = validatedPatches ?? parsePatches(accumulatedText)
             if (patches.length === 0) {
               // Empty patches array — just show the text as-is
               updateMessage(assistantId, { content: accumulatedText, status: 'done' })

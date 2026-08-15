@@ -42,12 +42,15 @@ export interface ModelProvider {
   type: 'bedrock' | 'litellm'
   baseUrl: string | null
   defaultModelId: string | null
+  allowedModelIds: string[]
+  runtimeCompatibleModelIds: string[]
   isOrgDefault: boolean
   hasApiKey: boolean
   status: string
   enabled: boolean
   runtimeCompatible?: boolean
   runtimeCompatibilityReason?: string | null
+  runtimeTarget?: string | null
   createdAt: string
   updatedAt: string
 }

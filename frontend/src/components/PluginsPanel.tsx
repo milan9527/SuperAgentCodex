@@ -1,7 +1,7 @@
 /**
  * PluginsPanel
  *
- * Slide-out panel for managing Claude Code plugins attached to the current
+ * Slide-out panel for managing runtime-compatible plugins attached to the current
  * business scope. Users can view installed plugins, add new ones by git URL,
  * and remove existing ones. Plugins are cloned into session workspaces and
  * loaded by the SDK automatically.
@@ -23,6 +23,14 @@ interface ScopePlugin {
   git_url: string
   ref: string
   assigned_at: string
+  compatibility: 'supported' | 'unsupported'
+  compatibility_reason: string | null
+}
+
+interface PluginListResponse {
+  data: ScopePlugin[]
+  runtime: string
+  additions_supported: boolean
 }
 
 interface PluginsPanelProps {
@@ -64,6 +72,8 @@ export function PluginsPanel({ open, onClose, businessScopeId }: PluginsPanelPro
   const [addGitUrl, setAddGitUrl] = useState('')
   const [addRef, setAddRef] = useState('main')
   const [adding, setAdding] = useState(false)
+  const [runtime, setRuntime] = useState('')
+  const [additionsSupported, setAdditionsSupported] = useState(true)
 
   // ── Load plugins ──
   const loadPlugins = useCallback(async () => {
@@ -71,10 +81,12 @@ export function PluginsPanel({ open, onClose, businessScopeId }: PluginsPanelPro
     setLoading(true)
     setError(null)
     try {
-      const res = await restClient.get<{ data: ScopePlugin[] }>(
+      const res = await restClient.get<PluginListResponse>(
         `/api/business-scopes/${businessScopeId}/plugins`,
       )
       setPlugins(res.data)
+      setRuntime(res.runtime)
+      setAdditionsSupported(res.additions_supported)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load plugins')
     } finally {
@@ -167,13 +179,15 @@ export function PluginsPanel({ open, onClose, businessScopeId }: PluginsPanelPro
           <div className="px-4 py-3">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Installed</span>
-              <button
-                onClick={() => setShowAdd(true)}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition-colors"
-              >
-                <Plus className="w-3 h-3" />
-                Add
-              </button>
+              {additionsSupported && (
+                <button
+                  onClick={() => setShowAdd(true)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add
+                </button>
+              )}
             </div>
 
             {loading ? (
@@ -184,7 +198,9 @@ export function PluginsPanel({ open, onClose, businessScopeId }: PluginsPanelPro
               <div className="text-center py-6">
                 <Puzzle className="w-8 h-8 text-gray-700 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">No plugins installed</p>
-                <p className="text-xs text-gray-600 mt-1">Add a plugin to extend Claude Code capabilities</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  {additionsSupported ? 'Add a compatible plugin' : `Plugins are unavailable for ${runtime}`}
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -199,6 +215,11 @@ export function PluginsPanel({ open, onClose, businessScopeId }: PluginsPanelPro
                         <span className="text-gray-600">·</span>
                         <span className="truncate">{p.git_url.replace(/^https?:\/\//, '').replace(/\.git$/, '')}</span>
                       </div>
+                      {p.compatibility === 'unsupported' && (
+                        <div className="text-xs text-amber-400 mt-1">
+                          {p.compatibility_reason}
+                        </div>
+                      )}
                     </div>
                     <button
                       onClick={() => handleRemove(p.id)}
@@ -215,7 +236,7 @@ export function PluginsPanel({ open, onClose, businessScopeId }: PluginsPanelPro
           </div>
 
           {/* Add plugin form */}
-          {showAdd && (
+          {additionsSupported && showAdd && (
             <div className="mx-4 mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
               <div className="text-xs font-medium text-gray-300 mb-2">Add Plugin</div>
               <div className="space-y-2">
@@ -258,6 +279,7 @@ export function PluginsPanel({ open, onClose, businessScopeId }: PluginsPanelPro
           )}
 
           {/* Popular / recommended plugins */}
+          {additionsSupported && (
           <div className="px-4 py-3 border-t border-gray-800">
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Popular Plugins</span>
             <div className="mt-3 space-y-2">
@@ -287,9 +309,10 @@ export function PluginsPanel({ open, onClose, businessScopeId }: PluginsPanelPro
               })}
             </div>
             <p className="text-xs text-gray-600 mt-3">
-              Added plugins will be git-cloned into the workspace and loaded by Claude Code when you start a new chat session or send the next message.
+              Plugins are loaded only when the active runtime reports compatibility.
             </p>
           </div>
+          )}
         </div>
       </div>
     </div>

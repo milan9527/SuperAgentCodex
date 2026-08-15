@@ -1,473 +1,684 @@
-# Super Agent Infra — 部署指南
+# Super Agent Codex AWS ECS 部署与运维
 
-## 概述
+本文是当前生产架构的部署 runbook。推荐路径是：
 
-本项目提供三种部署方式：
-
-- **ECS 一键部署**（推荐）：`deploy-full-ecs.sh` 使用 ECS Fargate 运行后端，无需 SSH/EC2，约 15-20 分钟
-- **EC2 一键部署**：`deploy-full.sh` 使用 EC2 实例运行后端，需要 SSH Key，约 20-30 分钟
-- **分步部署**：手动执行 CDK、`deploy.sh`、AgentCore 各阶段
-
-### 架构（ECS 模式）
-
-```
-用户 → CloudFront → S3 (前端静态文件)
-                  → ALB → ECS Fargate (API /api/*, WebSocket /ws/*)
-                              → Node.js 后端 (port 3000)
-                              → RDS PostgreSQL
-                              → ElastiCache Redis
-                              → Bedrock AgentCore Runtime (容器化 Agent)
+```text
+CloudFront + S3 Frontend
+          |
+          +-- ALB -> ECS Fargate Backend
+                       |-- RDS PostgreSQL
+                       |-- ElastiCache Redis
+                       |-- S3 workspace / skills / avatars
+                       |-- Bedrock AgentCore Codex Runtime
 ```
 
-### 架构（EC2 模式）
+详细组件关系见 [系统架构](../document/architecture.md)。
 
+## 1. 发布原则
+
+`infra/scripts/deploy-full-ecs.sh` 遵循以下规则：
+
+- 默认部署到 `us-east-1`。
+- backend 与 AgentCore 镜像使用 immutable tag，不使用 `latest`。
+- 正常全量部署创建新的 AgentCore Runtime。
+- 不更新或删除已有 AgentCore Runtime。
+- 可显式复用一个 `READY` Runtime ARN，但只读取，不修改。
+- Prisma migration、seed、Runtime READY、ECS readiness 任一失败都会中止发布。
+- JWT secret 存放在 Secrets Manager，增量部署不会重新生成并使用户全部掉线。
+- Browser、Web Bot Auth 和 Code Interpreter 使用 stack 专属资源。
+
+## 2. 部署拓扑
+
+```mermaid
+flowchart TB
+    USER[User] --> CF[CloudFront]
+    CF -->|Static| FRONTEND[S3 Frontend]
+    CF -->|/api /v1 /ws| ALB[Application Load Balancer]
+
+    subgraph VPC[AWS VPC]
+        ALB --> ECS[ECS Fargate ARM64]
+        ECS --> RDS[(RDS PostgreSQL)]
+        ECS --> REDIS[(ElastiCache Redis)]
+    end
+
+    ECS --> WS[S3 Workspace]
+    ECS --> SKILLS[S3 Skills]
+    ECS --> AVATARS[S3 Avatars]
+    ECS --> AC[Bedrock AgentCore Runtime]
+    AC --> ECR[ECR Codex Image]
+    AC --> BR[Bedrock OpenAI Responses]
+    AC --> BROWSER[Dedicated Browser with Web Bot Auth]
+    AC --> CI[Dedicated Code Interpreter]
 ```
-用户 → CloudFront → S3 (前端静态文件)
-                  → EC2 Nginx (API /api/*, WebSocket /ws/*)
-                       → Node.js 后端 (port 3000)
-                       → RDS PostgreSQL
-                       → ElastiCache Redis
-                       → Bedrock AgentCore Runtime (容器化 Agent)
-```
 
-## 前置条件
+## 3. 前置条件
 
-> ⚠️ **部署脚本必须在 ARM64 (AWS Graviton / Apple Silicon) 机器上运行。**
-> 后端 ECS 任务和 AgentCore Runtime 都要求 `linux/arm64` 镜像，AgentCore Runtime **只接受 ARM64**。在 ARM 主机上为原生构建，速度快且可靠。
-> 推荐在一台 **Graviton EC2 实例**（如 `t4g` / `c7g` / `m7g`，Amazon Linux 2023 或 Ubuntu）上执行部署。
->
-> 在 x86_64 主机上，脚本会自动配置 QEMU（`tonistiigi/binfmt`）做交叉构建，但**明显更慢且偶发不稳定**，不推荐用于正式部署。脚本会在推送后校验 AgentCore 镜像确为 arm64，架构不符会报错退出。
+### 3.1 AWS
 
-| 工具 | 用途 | ECS 模式 | EC2 模式 |
-|------|------|:--------:|:--------:|
-| **ARM64 (Graviton) 构建主机** | 构建 arm64 镜像（AgentCore 仅支持 ARM64） | ✅ | ✅ |
-| AWS CLI v2 | 基础设施操作 | ✅ | ✅ |
-| Node.js 22+ | 前端构建 | ✅ | ✅ |
-| Docker (含 buildx) | 后端 + AgentCore 容器构建 | ✅ | ✅ |
-| SSM Session Manager 插件 | SSH 隧道 | — | ✅ |
-| EC2 Key Pair | SSH 访问 | — | ✅ |
+- AWS CLI v2，已登录目标账号。
+- 目标 Region 已启用 Bedrock AgentCore。
+- 账号可调用目标 Bedrock OpenAI Responses 模型，例如 `openai.gpt-5.4`。
+- 默认 VPC 或 CDK 使用的 VPC 中有可用子网。
+- 已完成 CDK bootstrap。
+- IAM 身份可管理 CloudFormation、ECS、ECR、RDS、ElastiCache、S3、CloudFront、IAM、Secrets Manager、Logs、Bedrock 和 AgentCore。
 
-确认 AWS 身份与构建主机架构：
+检查身份与 Region：
 
 ```bash
 aws sts get-caller-identity
-uname -m   # 期望 aarch64 / arm64（Graviton）；x86_64 需 QEMU 交叉构建（不推荐）
+aws configure get region
 ```
 
-## ECS 一键部署（推荐）
-
-ECS 模式使用 Fargate 运行后端容器，无需管理 EC2 实例、SSH Key 或 Nginx。
-前端始终通过 S3 + CloudFront 提供服务，**无需自定义域名**——CloudFront 会分配一个默认的 `https://xxxx.cloudfront.net` 域名（自动 HTTPS，无需 ACM 证书或 Route53）。
-
-### 用法
-
-```bash
-./infra/scripts/deploy-full-ecs.sh --stack <名称> --region <区域>
-```
-
-只需指定 stack 名称和区域即可，其余全部自动完成（引擎版本、镜像架构、数据库迁移与 seed 都由脚本处理）。
-
-### 示例
-
-```bash
-cd /path/to/super-agent
-
-# 基础用法：全新部署到 us-east-1
-./infra/scripts/deploy-full-ecs.sh --stack SuperAgentDev1 --region us-east-1
-
-# 换个区域 / 用另一个 stack 名（不同 stack 资源完全隔离）
-./infra/scripts/deploy-full-ecs.sh --stack SuperAgentProd --region us-west-2
-```
-
-部署完成后，脚本会打印访问地址（CloudFront 默认域名），用 `admin@example.com` / `admin123` 登录。
-
-### 可选参数
-
-```bash
---stack <name>          # Stack 名称（默认 SuperAgent），不同 stack 完全隔离
---region <region>       # AWS Region（默认 us-west-2）
---bedrock-ak <key>      # 跨账号 Bedrock 凭证（可选）
---bedrock-sk <secret>   # 跨账号 Bedrock 凭证（可选）
---skip-cdk              # 跳过基础设施（已有 stack 时用）
---skip-agentcore        # 跳过 AgentCore 容器部署
---skip-frontend         # 跳过前端构建
---skip-backend          # 跳过后端构建
-```
-
-### ECS 部署流程（4 个阶段）
-
-**Phase 1: CDK Deploy**
-- 脚本自动探测当前区域可用的引擎版本（RDS PostgreSQL 16.x、ElastiCache Redis 7.x），避免硬编码版本在某些区域不可用
-- 创建 VPC Security Groups、ECS Cluster、ALB
-- RDS PostgreSQL、ElastiCache Redis
-- S3 桶（Avatar、Skills、Workspace、Frontend）
-- CloudFront（默认 `*.cloudfront.net` 域名，无需 ACM/Route53）
-- IAM Roles（ECS Task Execution + Task Role，含 Bedrock 调用与模型列举权限）
-- ECS Service（初始 desiredCount=0，等待真实镜像）
-
-**Phase 2: Backend Deploy**
-- 构建后端 Docker 镜像（ARM64）→ 推送到 ECR
-- 从 SecretsManager 获取 RDS 凭证
-- 通过 ECS run-task 执行 Prisma 迁移 + 数据库 seed（幂等，可重复执行）
-- 注册 ECS Task Definition（含所有环境变量）
-- 更新 ECS Service → 等待服务稳定
-- 首次部署自动创建 admin 用户：`admin@example.com` / `admin123`
-
-**Phase 3: Frontend Deploy**
-- 构建前端（Vite）→ S3 sync + CloudFront 失效
-
-**Phase 4: AgentCore Setup**
-- 创建 ECR 仓库，构建推送 AgentCore ARM64 Docker 镜像（脚本会校验推送镜像确为 arm64，AgentCore Runtime 仅支持 ARM64）
-- 创建 IAM Execution Role（Bedrock、S3、ECR、Browser、Code Interpreter 权限）
-- 创建 Bedrock AgentCore Runtime（使用 global inference profile）
-- 更新 ECS Task Definition 启用 AgentCore 模式
-
-> 在 x86 主机上部署时，脚本会自动配置 QEMU（`tonistiigi/binfmt`）以交叉构建 ARM64 镜像；在 ARM 主机（如 Apple Silicon、Graviton）上则原生构建。
-
-### ECS 部署完成后
-
-部署结束时脚本会打印 App URL（形如 `https://xxxx.cloudfront.net`），使用 `admin@example.com` / `admin123` 登录。
-
-> CloudFront 首次分发全球生效约需 5-15 分钟。
-
-查看后端日志（日志组名含 stack 名，小写）：
-
-```bash
-aws logs tail /super-agent/<stack名小写>/ecs-backend --region <region> --follow
-```
-
-> **重要**：首次登录后请立即修改 admin 密码。
-
-### ECS 增量部署
-
-```bash
-# 只部署代码（跳过 CDK 和 AgentCore）
-./infra/scripts/deploy-full-ecs.sh \
-  --stack SuperAgentProd --skip-cdk --skip-agentcore
-
-# 只更新后端
-./infra/scripts/deploy-full-ecs.sh \
-  --stack SuperAgentProd --skip-cdk --skip-agentcore --skip-frontend
-
-# 只更新前端
-./infra/scripts/deploy-full-ecs.sh \
-  --stack SuperAgentProd --skip-cdk --skip-agentcore --skip-backend
-```
-
----
-
-## EC2 一键部署
-
-### 带自定义域名（CloudFront CDN）
-
-需要 Route53 托管的域名和 EC2 Key Pair：
-
-```bash
-aws ec2 describe-key-pairs --query "KeyPairs[].KeyName" --region us-west-2
-```
-
-执行部署：
-
-```bash
-cd /path/to/super-agent
-
-./infra/scripts/deploy-full.sh ~/Downloads/my-key.pem \
-  --stack SuperAgentProd \
-  --region us-west-2 \
-  --domain app.example.com \
-  --hosted-zone-id Z01234567890ABC
-```
-
-### EC2 可选参数
-
-```bash
---stack <name>          # Stack 名称（默认 SuperAgent），不同 stack 完全隔离
---region <region>       # AWS Region（默认 us-west-2）
---bedrock-ak <key>      # 跨账号 Bedrock 凭证（可选）
---bedrock-sk <secret>   # 跨账号 Bedrock 凭证（可选）
---skip-cdk              # 跳过基础设施（已有 stack 时用）
---skip-agentcore        # 跳过 AgentCore 容器部署
---skip-frontend         # 跳过前端构建
---skip-backend          # 跳过后端构建
-```
-
-### EC2 部署流程（3 个阶段）
-
-**Phase 1: CDK Deploy**
-- 创建 VPC Security Groups、EC2 (t4g.small ARM64)、EIP
-- RDS PostgreSQL 16.6、ElastiCache Redis 7.1
-- S3 桶（Avatar、Skills、Workspace、Frontend）
-- CloudFront + ACM 证书 + Route53 ALIAS
-- IAM Role（EC2 + AgentCore）
-- 等待 EC2 UserData 完成（安装 Node.js、Nginx、PostgreSQL client 等）
-
-**Phase 2: Code Deploy**（调用 `deploy.sh`）
-- 从 SecretsManager 获取 RDS 凭证，生成 `.env`
-- 构建前端（Vite）→ rsync 到 EC2 + S3 sync + CloudFront 失效
-- 编译后端（tsc）→ rsync 到 EC2 → npm ci → prisma migrate → seed → 重启
-- 首次部署自动创建 admin 用户：`admin@example.com` / `Admin1234!`
-
-**Phase 3: AgentCore Setup**
-- 创建 ECR 仓库，构建推送 ARM64 Docker 镜像
-- 创建 IAM Execution Role（Bedrock、S3、ECR、Browser、Code Interpreter 权限）
-- 创建 Bedrock AgentCore Runtime
-- 更新 EC2 `.env` 启用 AgentCore 模式
-
-### EC2 部署完成后
-
-访问 `https://app.example.com`，使用 `admin@example.com` / `Admin1234!` 登录。
-
-> **重要**：首次登录后请立即修改 admin 密码。
-
-## 增量部署
-
-全量部署完成后，日常代码更新不需要重建基础设施：
-
-```bash
-# 只部署代码（跳过 CDK 和 AgentCore）
-./infra/scripts/deploy-full.sh ~/Downloads/my-key.pem \
-  --stack SuperAgentProd --skip-cdk --skip-agentcore
-
-# 或直接用 deploy.sh
-./infra/scripts/deploy.sh ~/Downloads/my-key.pem --stack SuperAgentProd
-
-# 只更新前端
-./infra/scripts/deploy.sh ~/Downloads/my-key.pem --stack SuperAgentProd --skip-backend
-
-# 只更新后端
-./infra/scripts/deploy.sh ~/Downloads/my-key.pem --stack SuperAgentProd --skip-frontend
-```
-
-## 多环境隔离
-
-每个 `--stack` 名称创建完全独立的资源（EC2、RDS、Redis、S3、CloudFront）：
-
-```bash
-# 生产环境
-./infra/scripts/deploy-full.sh ~/key.pem --stack SuperAgentProd --domain app.example.com --hosted-zone-id Z0XXX
-
-# 测试环境
-./infra/scripts/deploy-full.sh ~/key.pem --stack SuperAgentTest --domain test.example.com --hosted-zone-id Z0XXX
-```
-
-S3 桶名、SecretsManager secret 名、ElastiCache 集群名都以 stack 名为前缀，不会冲突。
-
-## CI/CD（GitHub Actions）
-
-项目包含 `.github/workflows/deploy-test.yml`，push 到 main 自动部署测试环境。
-
-### 配置 GitHub Secrets
-
-```bash
-./infra/scripts/setup-github-secrets.sh ~/Downloads/my-key.pem --repo owner/repo
-```
-
-自动配置：`AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`EC2_KEY_PAIR_NAME`、`EC2_SSH_PRIVATE_KEY`。
-
-另需手动添加（如使用 CDN）：`TEST_DOMAIN_NAME`、`TEST_HOSTED_ZONE_ID`。
-
-### Pipeline 流程
-
-1. **Build & Test** — 编译前后端 + 运行测试
-2. **CDK Deploy** — 部署/更新测试 Stack（`SuperAgentTest`）
-3. **Deploy Application** — 通过 SSM 部署代码到 EC2
-4. **Smoke Test** — 健康检查 + 前端可达性验证
-
-## 模型来源配置（在界面中设置）
-
-模型来源直接在应用界面配置，**无需 SSH、无需部署脚本、无需改环境变量**。以管理员登录后进入 **Settings → Models（设置 → 模型来源）**。
-
-默认已内置一个组织默认来源：**Amazon Bedrock**（模型 `global.anthropic.claude-opus-4-8`）。
-
-### 添加 LiteLLM 网关（接入第三方模型，如 Kimi、GLM 等）
-
-1. Settings → Models → **Add Provider（添加来源）**
-2. **Type** 选择 **LiteLLM Gateway**
-3. 填写：
-   - **Name**：显示名称（如 `Corp LiteLLM`）
-   - **Base URL**：网关地址（如 `https://litellm.example.com`）
-   - **API Key**：网关密钥（仅写入、不回显；编辑时留空表示保留原值）
-   - **Model ID**：要使用的模型 ID（**必填**，如 `claude-opus-4.8`）——对话中直接使用该指定模型，不会列出网关的全部模型
-4. 保存后，可对该来源：**启用/停用**、**设为组织默认（★）**、**编辑**、**删除**
-
-### 添加 / 编辑 Amazon Bedrock 来源
-
-Type 选择 **Amazon Bedrock** 时，**Model ID** 会自动列出当前区域可用的 Bedrock 模型（点 **Refresh** 刷新）供选择；无需 Base URL / API Key（使用平台自身的 AWS 凭证）。
-
-**支持 Claude 与非 Claude 模型**：直连 Bedrock 来源不仅支持 Anthropic/Claude，也支持 **Amazon Nova、DeepSeek、Meta Llama、OpenAI gpt-oss、Kimi** 等 Bedrock 托管模型。运行时会自动为非 Claude 模型切换到兼容路径（见下文"模型统一兼容"）。
-
-> 少数模型的注意事项：**推理型模型**（如 DeepSeek R1、Kimi K2 Thinking）在 Bedrock 上不支持工具调用；由于 Agent 会话总是携带工具，代理会自动去掉工具重试一次（可回答，但无工具能力）。**Llama 3.3** 会把工具调用当成普通文本返回（不推荐做 Agent）；**Llama 4** 则原生支持工具，推荐用于 Agent 场景。
-
-### 使用非 Bedrock 模型（OpenAI 直连 / DeepSeek 直连等）
-
-不在 Bedrock 上托管的模型，通过 **LiteLLM 网关来源** 接入（见上文），由网关翻译到各家原生 API。
-
-> 生效范围：启用的来源会出现在对话框的模型选择器中；组织默认来源用于未显式指定模型时的兜底。切换默认来源即改变全局默认模型。
-
-## 模型统一兼容（架构）
-
-Agent 运行时本质是 **Claude Code CLI**，它**只会说 Anthropic Messages 协议**（请求带 `metadata`、`cachePoint`、`thinking` 等字段）。不同模型对这套协议的接受度不同——Bedrock 上的 Claude 全接受，而 Nova / DeepSeek / Llama 会拒绝 `metadata`、`cachePoint`、`thinking`，且 `max_tokens` 上限各异。统一兼容靠服务端的**路由 + 协议翻译 + 能力裁剪**实现，客户端（CLI）无需改动。
-
-```
-Claude Code CLI ──(Anthropic Messages)──▶ [路由]
-                                            ├─ Anthropic 模型         → Bedrock 直连（原生可用）
-                                            ├─ 其他 Bedrock 托管模型  → 内置代理 /v1/messages → Bedrock Converse（能力裁剪）
-                                            └─ 非 Bedrock 模型        → 外部 LiteLLM 网关 → 各家原生 API
-```
-
-**第 1 层 · 路由决策**（`backend/src/services/agent-runtime-agentcore.ts`）
-逐请求判断：`provider == bedrock` 且模型非 Anthropic（`isAnthropicBedrockModel()`）时，改道到后端自带的 `/v1/messages` 代理（把 `provider` 视作 `litellm`，`base_url` 指向后端公网地址 `AGENTCORE_BACKEND_API_URL`，用内部服务令牌鉴权）；Claude 模型走 Bedrock 直连的快速路径。
-
-**第 2 层 · Anthropic → Converse 代理**（`backend/src/routes/llm-proxy.routes.ts` + `backend/src/services/llm-proxy/`）
-`/v1/messages` 把 Anthropic 协议转换成 **Bedrock Converse**（Bedrock 的统一 API，一套 schema 覆盖 Nova / DeepSeek / Llama 等）。转换器里的**能力裁剪门**是通用性的关键（`openai-to-bedrock.ts`）：
-- `isAnthropicModel()` 拦住 Claude 专属字段 → 非 Anthropic 模型**不注入** `cachePoint`（提示缓存）与 `thinking`（扩展思考）
-- `MODEL_MAX_OUTPUT_TOKENS` 按模型钳制 `max_tokens`（如 Nova 8192）
-- **无工具回退**：模型拒绝 `tools` 时（如 DeepSeek R1），自动去掉工具重试一次
-- 代理接受容器传来的**内部服务令牌**（`internal.*`，授予 `model:invoke`），无需单独发放 API Key
-
-**第 3 层 · 外部 LiteLLM 网关**（非 Bedrock 模型）
-容器路径相同（`ANTHROPIC_BASE_URL` 指向网关），由网关做同样的协议翻译。若网关上的推理模型报 `does not support parameters: ['tools']`，在**网关端**配置 `litellm_settings: drop_params: true` 即可。
-
-> 依赖的部署配置（`deploy-full-ecs.sh` 与 CDK 已内置）：ECS 任务注入 `AGENTCORE_BACKEND_API_URL`（容器回调地址），CloudFront 增加 `/v1/*` 行为把 LLM 代理请求转发到 ALB。
-
-## 运维
-
-### 查看日志
-
-**ECS 模式：**
-
-```bash
-# CloudWatch Logs（推荐；日志组名含 stack 名，小写）
-aws logs tail /super-agent/<stack名小写>/ecs-backend --region <region> --follow
-
-# 或通过 ECS Exec 进入容器
-TASK_ARN=$(aws ecs list-tasks --cluster <cluster-name> --service-name <service-name> --region <region> --query "taskArns[0]" --output text)
-aws ecs execute-command --cluster <cluster-name> --task $TASK_ARN --container backend --interactive --command "/bin/sh" --region <region>
-```
-
-**EC2 模式：**
-
-```bash
-# 通过 SSM 连接
-aws ssm start-session --target <InstanceId> --region us-west-2
-
-# 后端日志
-tail -f /opt/super-agent/logs/backend.log
-tail -f /opt/super-agent/logs/backend-error.log
-
-# Nginx 日志
-tail -f /var/log/nginx/access.log
-tail -f /var/log/nginx/error.log
-```
-
-日志也会自动推送到 CloudWatch Logs（`/super-agent/backend`、`/super-agent/nginx-*`）。
-
-### 重启服务
-
-**ECS 模式：**
-
-```bash
-# 强制新部署（拉取最新镜像）
-aws ecs update-service --cluster <cluster-name> --service <service-name> --force-new-deployment --region <region>
-
-# 等待稳定
-aws ecs wait services-stable --cluster <cluster-name> --services <service-name> --region <region>
-```
-
-**EC2 模式：**
-
-```bash
-sudo systemctl restart backend
-sudo systemctl status backend
-```
-
-### 环境变量
-
-**ECS 模式：** 环境变量在 ECS Task Definition 中管理。更新方式：
-
-```bash
-# 重新运行 deploy 脚本（会注册新 task definition 并更新 service）
-./infra/scripts/deploy-full-ecs.sh --stack <StackName> --skip-cdk --skip-frontend
-```
-
-**EC2 模式：** 生产环境变量在 `/opt/super-agent/.env`（systemd EnvironmentFile）。
-`deploy.sh` 的合并策略是"已有值不覆盖"，手动添加的变量不会被后续部署覆盖。
-
-### AgentCore ↔ Claude 模式切换
-
-```bash
-# 切换到 Claude 模式（EC2 子进程）
-sed -i 's/^AGENT_RUNTIME=agentcore/AGENT_RUNTIME=claude/' /opt/super-agent/.env
-sudo systemctl restart backend
-
-# 切回 AgentCore 模式
-sed -i 's/^AGENT_RUNTIME=claude/AGENT_RUNTIME=agentcore/' /opt/super-agent/.env
-sudo systemctl restart backend
-```
-
-### 更新 AgentCore 容器
-
-```bash
-cd agentcore
-docker buildx build --platform linux/arm64 \
-  -t <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/super-agent-agentcore:latest \
-  --load .
-docker push <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/super-agent-agentcore:latest
-
-# 通知 AgentCore 拉取新镜像（⚠️ --environment-variables 是全量替换，必须传完整）
-# 注意：ANTHROPIC_MODEL 必须使用 global inference profile（跨区域可用）
-aws bedrock-agentcore-control update-agent-runtime \
-  --agent-runtime-id <runtime-id> \
-  --agent-runtime-artifact '{"containerConfiguration":{"containerUri":"<ECR_URI>:latest"}}' \
-  --role-arn "arn:aws:iam::<ACCOUNT_ID>:role/super-agent-agentcore-role-<StackName>" \
-  --network-configuration '{"networkMode":"PUBLIC"}' \
-  --environment-variables '{"CLAUDE_CODE_USE_BEDROCK":"1","ANTHROPIC_MODEL":"global.anthropic.claude-opus-4-6-v1","AWS_REGION":"<REGION>","WORKSPACE_S3_REGION":"<REGION>"}' \
-  --region <REGION>
-```
-
-> **模型 ID 注意事项**：
-> - 使用 `global.anthropic.*` 前缀的 inference profile（所有区域可用）
-> - 不要使用 `us.anthropic.*`（仅 US 区域）或裸模型名（如 `claude-sonnet-4-6`）
-> - 可用 `aws bedrock list-inference-profiles --region <region>` 查看当前区域支持的 profile
-
-## 销毁环境
+CDK bootstrap：
 
 ```bash
 cd infra
-
-# EC2 模式
-npx cdk destroy -c stackName=SuperAgentProd --region us-west-2 --force
-
-# ECS 模式
-npx cdk destroy -c stackName=SuperAgentProd -c deployTarget=ecs --region us-west-2 --force
+npx cdk bootstrap aws://<ACCOUNT_ID>/us-east-1
 ```
 
-CDK destroy 后需要手动清理：
+### 3.2 构建环境
+
+- Node.js `>=22`，满足 AgentCore 构建要求。
+- npm。
+- Docker 与 buildx。
+- `jq`、`python3`、`openssl`、`curl`、`git`。
+- 推荐 ARM64/Graviton 构建机。
+
+AgentCore 仅接受 `linux/arm64` 镜像。x86 主机可以使用 QEMU/buildx，但速度更慢。
 
 ```bash
-# Avatar 和 Skills 桶（removalPolicy=RETAIN，CDK 不删）
-aws s3 rb s3://<avatar-bucket-name> --force
-aws s3 rb s3://<skills-bucket-name> --force
-
-# ECR 仓库
-aws ecr delete-repository --repository-name super-agent-agentcore --force --region <REGION>
-aws ecr delete-repository --repository-name super-agent-backend --force --region <REGION>  # ECS 模式
-
-# AgentCore 资源（不在 CDK 管理范围）
-aws bedrock-agentcore-control delete-agent-runtime --agent-runtime-id <id> --region <REGION>
-aws iam delete-role-policy --role-name super-agent-agentcore-role-<StackName> --policy-name agentcore-permissions-<StackName>
-aws iam delete-role --role-name super-agent-agentcore-role-<StackName>
+node --version
+docker buildx version
+docker buildx inspect --bootstrap
+uname -m
 ```
 
-## 已知注意事项
+## 4. 首次部署
 
-- **Bedrock 模型 ID**：必须使用 `global.anthropic.*` inference profile（如 `global.anthropic.claude-opus-4-8`），不要使用 `us.anthropic.*`（仅 US 区域）或裸 Anthropic API 名称。ECS 默认模型来源为 Amazon Bedrock + `global.anthropic.claude-opus-4-8`
-- **引擎版本自动探测**：RDS PostgreSQL / ElastiCache Redis 版本不硬编码，脚本部署前查询当前区域实际可用的版本再传给 CDK（避免"某版本在该区域不可用"导致创建失败）
-- **无自定义域名**：默认使用 CloudFront 分配的 `*.cloudfront.net` 域名，无需 ACM 证书或 Route53；CloudFront 首次全球生效约 5-15 分钟
-- **ECS 模式 — Prisma 迁移 + seed**：由于 RDS 不可公网访问，迁移与 seed 通过 ECS run-task 在 VPC 内执行；seed 幂等，重复部署不会重复插入；`prisma.config.ts` 中的 `dotenv/config` 在生产镜像中不可用，部署脚本会自动重写配置
-- **ECS 模式 — 初始 desiredCount=0**：CDK 创建 ECS Service 时使用占位镜像，desiredCount 设为 0 避免健康检查失败；部署脚本推送真实镜像后设为 1
-- **EC2 UserData 耗时**：首次创建 EC2 约需 3-5 分钟完成 bootstrap，`deploy-full.sh` 会自动等待
-- **CloudFront Origin**：ECS 模式直接使用 ALB DNS 作为 origin（无占位符）；EC2 模式使用占位符，`deploy-full.sh` 会自动替换
-- **`DnsValidatedCertificate` 废弃警告**：CDK 会输出 deprecation warning，功能正常，未来版本需迁移到 `acm.Certificate`
-- **S3 桶 RETAIN 策略**：Avatar 和 Skills 桶设为 RETAIN，CDK destroy 不会删除，需手动清理
-- **所有资源同 VPC**：ECS tasks、RDS、ElastiCache、ALB 必须在同一 VPC 内，安全组规则控制互访
+从项目根目录执行：
+
+```bash
+./infra/scripts/deploy-full-ecs.sh \
+  --stack SuperAgentCodex \
+  --region us-east-1
+```
+
+如需自定义域名：
+
+```bash
+./infra/scripts/deploy-full-ecs.sh \
+  --stack SuperAgentCodex \
+  --region us-east-1 \
+  --domain agent.example.com \
+  --hosted-zone-id Z0123456789EXAMPLE
+```
+
+`--domain` 与 `--hosted-zone-id` 必须同时提供。未配置时，CloudFront 会分配默认 HTTPS 域名。
+
+### 4.1 参数
+
+| 参数 | 说明 |
+| --- | --- |
+| `--stack NAME` | CloudFormation stack 名，默认 `SuperAgentCodex` |
+| `--region REGION` | AWS Region，默认 `us-east-1` |
+| `--domain DOMAIN` | 可选 CloudFront 自定义域名 |
+| `--hosted-zone-id ID` | 自定义域名所在 Route53 Hosted Zone |
+| `--agentcore-runtime-name NAME` | 新 Runtime 名称，必须不存在 |
+| `--agentcore-image-tag TAG` | 新 AgentCore immutable image tag |
+| `--agentcore-runtime-arn ARN` | 显式复用同账号、同区域的 `READY` Runtime |
+| `--skip-cdk` | 复用已有 CloudFormation stack |
+| `--skip-agentcore` | 复用最新 ECS task 中的 Runtime |
+| `--skip-frontend` | 跳过 frontend build、S3 sync 和 CloudFront invalidation |
+| `--skip-backend` | 跳过 backend image、migration、seed 和 ECS rollout |
+
+查看实时帮助：
+
+```bash
+./infra/scripts/deploy-full-ecs.sh --help
+```
+
+## 5. 部署阶段
+
+### Phase 1: CDK Infrastructure
+
+脚本会：
+
+1. 安装并编译 `infra/`。
+2. 查询当前 Region 可用的 PostgreSQL 16.x 和 Redis 7.x。
+3. `cdk synth`。
+4. `cdk deploy --require-approval never`。
+
+主要资源：
+
+- ECS cluster、Fargate service、task roles
+- ALB 和 target group
+- RDS PostgreSQL
+- ElastiCache Redis，`maxmemory-policy=noeviction`
+- workspace、skills、avatars、frontend S3 buckets
+- CloudFront distribution
+- ECR repositories
+- CloudWatch log group
+- Secrets Manager database secret
+
+### Phase 2: Create-only AgentCore Runtime
+
+脚本调用：
+
+```text
+infra/scripts/deploy-codex-agentcore-new.sh
+```
+
+它会：
+
+- 创建 stack 专属 ECR repository。
+- 构建并推送 ARM64 Codex image。
+- 校验镜像架构。
+- 创建新的 execution role。
+- 调用 `create-agent-runtime`。
+- 等待状态变为 `READY`。
+
+这一步没有 update/delete 分支。同名 Runtime 或 image tag 已存在时会失败。
+
+### Phase 2b: Dedicated AgentCore Tools
+
+脚本调用：
+
+```text
+infra/scripts/ensure-agentcore-tools.sh
+```
+
+它会 create-or-verify：
+
+- `<stack>_browser_webauth`
+- `<stack>_code_interpreter`
+
+Browser 必须：
+
+- `networkMode=PUBLIC`
+- `browserSigning.enabled=true`
+- execution role 仍存在
+
+Code Interpreter 必须：
+
+- `networkMode=PUBLIC`
+- execution role 仍存在
+
+AgentCore MCP policy proxy 会锁定这两个 identifier，模型不能改回 AWS 共享默认工具。
+
+### Phase 3: Backend、Migration、Seed、ECS
+
+脚本会：
+
+1. 构建 ARM64 backend image。
+2. 推送 immutable ECR tag。
+3. 从 Secrets Manager 读取数据库凭据。
+4. 在 VPC 内运行一次性 ECS migration task。
+5. migration 成功后运行 seed task。
+6. 注册新的 task definition。
+7. 更新 ECS service。
+8. 等待 service stable 和 ALB readiness。
+
+生产镜像包含 `prisma.config.ts`、Prisma CLI、`tsx`、固定 Codex CLI 和 LiteLLM Claude adapter 所需运行时。
+
+首次 seed 创建：
+
+- local admin：`admin@example.com`
+- 默认密码：`admin123`
+- 默认 provider：Codex Bedrock
+- 默认模型与 allowlist：`openai.gpt-5.4`
+
+首次登录后必须修改默认密码。
+
+### Phase 4: Frontend
+
+脚本会：
+
+1. Vite production build。
+2. 同步到 frontend S3 bucket。
+3. 创建 CloudFront invalidation。
+4. 等待 invalidation 完成。
+5. 请求公开 URL 进行 smoke check。
+
+## 6. 失败后安全续跑
+
+发布是 fail-closed 的。某一步失败后，不应修改已有 Runtime 或改用 `latest`。
+
+### 6.1 复用本次已经创建的 Runtime
+
+如果 Runtime 已经 `READY`，但 migration、seed 或 ECS rollout 失败：
+
+```bash
+./infra/scripts/deploy-full-ecs.sh \
+  --stack SuperAgentCodex \
+  --region us-east-1 \
+  --skip-cdk \
+  --agentcore-runtime-arn <READY_RUNTIME_ARN>
+```
+
+脚本会校验：
+
+- ARN 属于当前账号。
+- ARN 位于当前 Region。
+- Runtime 状态为 `READY`。
+
+它不会更新 Runtime。
+
+### 6.2 复用最新 ECS task 的 Runtime
+
+仅更新代码：
+
+```bash
+./infra/scripts/deploy-full-ecs.sh \
+  --stack SuperAgentCodex \
+  --region us-east-1 \
+  --skip-cdk \
+  --skip-agentcore
+```
+
+脚本从最新 task definition 读取 Runtime ARN。
+
+## 7. 增量发布
+
+### 7.1 只更新 Backend
+
+```bash
+./infra/scripts/deploy-full-ecs.sh \
+  --stack SuperAgentCodex \
+  --region us-east-1 \
+  --skip-cdk \
+  --skip-agentcore \
+  --skip-frontend
+```
+
+仍会执行 migration 和 seed。
+
+### 7.2 只更新 Frontend
+
+```bash
+./infra/scripts/deploy-full-ecs.sh \
+  --stack SuperAgentCodex \
+  --region us-east-1 \
+  --skip-cdk \
+  --skip-agentcore \
+  --skip-backend
+```
+
+### 7.3 新 AgentCore Runtime + Backend
+
+Runtime 代码或容器依赖发生变化时：
+
+```bash
+./infra/scripts/deploy-full-ecs.sh \
+  --stack SuperAgentCodex \
+  --region us-east-1 \
+  --skip-cdk \
+  --skip-frontend \
+  --agentcore-runtime-name SuperAgentCodexCodex<YYYYMMDDHHMMSS> \
+  --agentcore-image-tag codex-<release-id>
+```
+
+名称与 tag 必须唯一。
+
+### 7.4 只更新 CDK
+
+先查看差异：
+
+```bash
+cd infra
+npm ci
+npm run build
+npx cdk diff \
+  -c stackName=SuperAgentCodex \
+  -c enableCdn=true \
+  -c deployTarget=ecs \
+  --region us-east-1
+```
+
+确认后可运行完整脚本，或手动 `cdk deploy`。手动部署时必须使用与 full 脚本相同的 context，避免误拿 EC2 template 与 ECS stack 比较。
+
+## 8. 部署后验收
+
+### 8.1 CloudFormation
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name SuperAgentCodex \
+  --region us-east-1 \
+  --query 'Stacks[0].StackStatus' \
+  --output text
+```
+
+预期：
+
+```text
+CREATE_COMPLETE
+```
+
+或：
+
+```text
+UPDATE_COMPLETE
+```
+
+### 8.2 Stack Outputs
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name SuperAgentCodex \
+  --region us-east-1 \
+  --query 'Stacks[0].Outputs[*].[OutputKey,OutputValue]' \
+  --output table
+```
+
+重点检查：
+
+- `CloudFrontDomainName`
+- `EcsClusterName`
+- `EcsServiceName`
+- `DBEndpoint`
+- `RedisEndpoint`
+- `WorkspaceBucketName`
+- `SkillsBucketName`
+- `FrontendBucketName`
+
+### 8.3 ECS
+
+```bash
+CLUSTER=<EcsClusterName>
+SERVICE=<EcsServiceName>
+
+aws ecs describe-services \
+  --cluster "$CLUSTER" \
+  --services "$SERVICE" \
+  --region us-east-1 \
+  --query 'services[0].{desired:desiredCount,running:runningCount,status:deployments[0].rolloutState}' \
+  --output table
+```
+
+预期：
+
+- desired = running
+- rolloutState = `COMPLETED`
+
+检查 ALB target：
+
+```bash
+aws elbv2 describe-target-health \
+  --target-group-arn <TARGET_GROUP_ARN> \
+  --region us-east-1
+```
+
+### 8.4 RDS
+
+```bash
+aws rds describe-db-instances \
+  --region us-east-1 \
+  --query 'DBInstances[?contains(DBInstanceIdentifier, `superagentcodex`)].{id:DBInstanceIdentifier,status:DBInstanceStatus,engine:Engine,version:EngineVersion,public:PubliclyAccessible,encrypted:StorageEncrypted}' \
+  --output table
+```
+
+预期：
+
+- status = `available`
+- public = `false`
+- encrypted = `true`
+
+### 8.5 Redis
+
+```bash
+aws elasticache describe-cache-clusters \
+  --show-cache-node-info \
+  --region us-east-1
+```
+
+确认 parameter group 为 `in-sync`，并检查：
+
+```bash
+aws elasticache describe-cache-parameters \
+  --cache-parameter-group-name <PARAMETER_GROUP> \
+  --region us-east-1 \
+  --query 'Parameters[?ParameterName==`maxmemory-policy`].[ParameterName,ParameterValue]' \
+  --output table
+```
+
+预期：
+
+```text
+maxmemory-policy | noeviction
+```
+
+### 8.6 S3
+
+对四个 bucket 检查：
+
+```bash
+aws s3api get-public-access-block --bucket <BUCKET>
+aws s3api get-bucket-encryption --bucket <BUCKET>
+```
+
+workspace session 应包含 Codex 布局：
+
+```text
+AGENTS.md
+.agents/
+.codex/
+.runtime/
+```
+
+不应重新生成 `CLAUDE.md` 或 `.claude/`。
+
+### 8.7 AgentCore Runtime
+
+```bash
+aws bedrock-agentcore-control get-agent-runtime \
+  --agent-runtime-id <RUNTIME_ID> \
+  --region us-east-1
+```
+
+预期：
+
+```text
+status = READY
+```
+
+确认 Runtime 指向本次 immutable ECR tag。
+
+### 8.8 Browser 与 Code Interpreter
+
+```bash
+./infra/scripts/ensure-agentcore-tools.sh \
+  --stack SuperAgentCodex \
+  --region us-east-1 \
+  --execution-role-arn <RUNTIME_EXECUTION_ROLE_ARN>
+```
+
+脚本会输出：
+
+```text
+AGENTCORE_BROWSER_IDENTIFIER=...
+AGENTCORE_CODE_INTERPRETER_IDENTIFIER=...
+```
+
+### 8.9 应用 Smoke
+
+```bash
+curl -fsS https://<CLOUDFRONT_DOMAIN>/
+```
+
+登录后至少验证：
+
+1. Settings > Models 中 `openai.gpt-5.4` 已允许。
+2. 创建一个 session。
+3. 让 Agent 写入 proof 文件。
+4. 等待唯一 `completed` 终态。
+5. 在 workspace S3 中读回 proof。
+6. 调用 Browser 和 Code Interpreter。
+
+## 9. 日志与故障排查
+
+### 9.1 Backend Logs
+
+```bash
+aws logs tail \
+  /super-agent/superagentcodex/ecs-backend \
+  --region us-east-1 \
+  --follow
+```
+
+其他 stack 的日志组规则：
+
+```text
+/super-agent/<stack-name-lowercase>/ecs-backend
+```
+
+### 9.2 ECS Task 状态
+
+```bash
+aws ecs list-tasks \
+  --cluster <CLUSTER> \
+  --service-name <SERVICE> \
+  --region us-east-1
+
+aws ecs describe-tasks \
+  --cluster <CLUSTER> \
+  --tasks <TASK_ARN> \
+  --region us-east-1
+```
+
+### 9.3 ECS Exec
+
+```bash
+aws ecs execute-command \
+  --cluster <CLUSTER> \
+  --task <TASK_ARN> \
+  --container backend \
+  --interactive \
+  --command '/bin/sh' \
+  --region us-east-1
+```
+
+需要本机安装 Session Manager plugin，且 task role/execution role 具有对应 SSM Messages 权限。
+
+### 9.4 Migration 失败
+
+检查 migration task 的 stopped reason 和 CloudWatch stream：
+
+```bash
+aws ecs describe-tasks \
+  --cluster <CLUSTER> \
+  --tasks <MIGRATION_TASK_ARN> \
+  --region us-east-1
+```
+
+常见检查项：
+
+- 生产镜像中存在 `prisma.config.ts`。
+- `DATABASE_URL` 指向私网 RDS endpoint。
+- ECS security group 可以访问 RDS 5432。
+- Prisma client 与 CLI 版本一致。
+- migration SQL 可向前兼容。
+
+migration 失败后不要继续 seed 或 ECS rollout；full 脚本已经按此行为 fail closed。
+
+### 9.5 AgentCore 424/502
+
+检查：
+
+- 镜像是 `linux/arm64`。
+- Docker 使用数字用户。
+- 容器监听 `0.0.0.0:8080`。
+- `/ping` 和 `/invocations` 符合 AgentCore contract。
+- execution role 有 Bedrock Responses/Mantle、S3 和工具权限。
+- `WORKSPACE_S3_REGION` 与 bucket 实际 Region 一致。
+
+### 9.6 模型调用失败
+
+- Bedrock GPT 必须走 `openai.gpt-5*` Responses model。
+- `gpt-oss-*-1:0` 的 Converse/Invoke model ID 不能替代 Codex 使用的 Responses 路径。
+- Bedrock Claude 不属于 Codex provider 支持范围。
+- Claude 模型应通过 Settings 中允许的 LiteLLM provider 使用。
+
+### 9.7 BullMQ Warning
+
+如果日志出现 Redis eviction policy warning，确认：
+
+```text
+maxmemory-policy=noeviction
+```
+
+修改 parameter group 后滚动一次 ECS service，让连接重新建立。
+
+## 10. 回滚
+
+### 10.1 Backend
+
+找到上一版 task definition：
+
+```bash
+aws ecs list-task-definitions \
+  --family-prefix <TASK_FAMILY> \
+  --sort DESC \
+  --region us-east-1
+```
+
+更新 service 指向已验证 revision：
+
+```bash
+aws ecs update-service \
+  --cluster <CLUSTER> \
+  --service <SERVICE> \
+  --task-definition <TASK_DEFINITION_ARN> \
+  --region us-east-1
+```
+
+### 10.2 AgentCore
+
+不要原地 update 失败 Runtime。注册新的 backend task definition，将 `AGENTCORE_RUNTIME_ARN` 指回已验证的 `READY` Runtime。
+
+### 10.3 Database
+
+数据库 migration 应向前兼容。容器回滚不能自动撤销 schema。破坏性 schema 变更必须使用 expand/migrate/contract 发布策略。
+
+## 11. 生产硬化
+
+当前默认模板适合验证和中等规模环境。正式生产上线前应评估：
+
+- RDS Multi-AZ
+- RDS deletion protection
+- 更长备份保留期与恢复演练
+- Redis 传输加密、静态加密和 replication group
+- S3 versioning、Object Lock 或跨区域复制
+- AWS WAF
+- CloudFront 与 ALB access logs
+- Secret rotation
+- 告警、SLO、canary 和容量压测
+
+这些配置可能触发资源替换，不应在未查看 `cdk diff` 时直接应用到已有生产 stack。
+
+## 12. 资源清理
+
+资源清理是破坏性操作，执行前必须：
+
+1. 导出数据库 snapshot。
+2. 备份需要保留的 S3 数据。
+3. 记录当前 Runtime、Browser 和 Code Interpreter ID。
+4. 确认没有其他 stack 复用资源。
+
+CloudFormation stack：
+
+```bash
+cd infra
+npx cdk destroy \
+  -c stackName=SuperAgentCodex \
+  -c enableCdn=true \
+  -c deployTarget=ecs \
+  --region us-east-1
+```
+
+AgentCore Runtime、dedicated tools、保留策略 S3 bucket、ECR image 和 IAM role 可能不由 CDK 自动删除。应按资源清单逐项人工确认后清理；不要把自动删除逻辑加入正常部署脚本。
+
+## 13. Legacy EC2 路径
+
+仓库仍保留 `deploy-full.sh` 和 `deploy.sh`，用于旧 EC2 安装或迁移参考。当前 Codex/AgentCore 验收、dedicated tools、immutable Runtime 和 fail-closed migration 的权威路径是 `deploy-full-ecs.sh`。
+
+新环境不要从 EC2 文档开始；如必须维护旧环境，应先对照 [迁移规范](../codex-sdk-migration/MIGRATION_SPEC.md) 审计功能差异。

@@ -23,9 +23,13 @@ interface ToolRef {
 }
 
 interface ModelConfigRef {
-  provider: 'Bedrock' | 'OpenAI' | 'Azure';
+  provider: 'Bedrock' | 'OpenAI' | 'Azure' | 'LiteLLM';
   modelId: string;
   agentType: 'Orchestrator' | 'Worker' | 'Supervisor';
+  modelSelection?: {
+    providerId?: string;
+    modelId?: string;
+  };
 }
 
 // ============================================================================

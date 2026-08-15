@@ -10,6 +10,7 @@
 import { modelProviderRepository } from '../repositories/model-provider.repository.js';
 import { credentialVaultService } from './credential-vault.service.js';
 import type { ModelSelection } from '../schemas/model-provider.schema.js';
+import { AppError } from '../middleware/errorHandler.js';
 
 export interface ResolvedModel {
   provider: 'bedrock' | 'litellm';
@@ -27,20 +28,11 @@ interface ResolveInput {
   agentSelection?: ModelSelection | null;
 }
 
-/**
- * On the direct Bedrock path the agent runtime drives Claude Code, which speaks
- * ONLY the Anthropic Messages schema (it includes a top-level `metadata` field).
- * Anthropic models on Bedrock accept that; non-Anthropic models (Nova, Titan,
- * Llama, Mistral, …) use a different schema and reject it with
- * "extraneous key [metadata] is not permitted". So a Bedrock provider can only
- * serve Anthropic model ids here — other models must go through a LiteLLM
- * gateway (which translates the schema). This detects an Anthropic model id,
- * tolerating region/global inference-profile prefixes (us./eu./apac./global.).
- */
-export function isAnthropicBedrockModel(modelId: string | undefined): boolean {
-  if (!modelId) return true; // undefined → runtime falls back to its Anthropic default
+/** Codex's Bedrock provider requires an OpenAI Responses-compatible model. */
+export function isCodexBedrockModel(modelId: string | undefined): boolean {
+  if (!modelId) return false;
   const id = modelId.toLowerCase();
-  return id.includes('anthropic.') || id.startsWith('anthropic') || id.includes('claude');
+  return id.startsWith('openai.gpt-5') || id.startsWith('gpt-5');
 }
 
 /**
@@ -87,11 +79,13 @@ export async function resolveModel(
   let provider = selection?.providerId
     ? await modelProviderRepository.findById(selection.providerId, organizationId)
     : await modelProviderRepository.findOrgDefault(organizationId);
+  let selectedModelId = selection?.modelId;
 
   // A disabled provider (e.g. one that was turned off after being assigned to a
   // scope/agent) falls back to the org default so chats keep working.
   if (provider && provider.status === 'disabled') {
     provider = await modelProviderRepository.findOrgDefault(organizationId);
+    selectedModelId = undefined;
   }
 
   // No provider row at all (e.g. brand-new org before seed): bedrock default.
@@ -99,7 +93,21 @@ export async function resolveModel(
   // valid default (local: getBedrockModelId(config.claude.model); container:
   // its ANTHROPIC_MODEL env) rather than a possibly-unresolvable alias.
   if (!provider) {
-    return { provider: 'bedrock', modelId: selection?.modelId };
+    return { provider: 'bedrock', modelId: selectedModelId };
+  }
+
+  const allowedModelIds = provider.allowed_model_ids?.length
+    ? provider.allowed_model_ids
+    : provider.default_model_id
+      ? [provider.default_model_id]
+      : [];
+  const modelId = selectedModelId ?? provider.default_model_id ?? undefined;
+  if (!modelId || !allowedModelIds.includes(modelId)) {
+    throw AppError.validation(
+      modelId
+        ? `Model "${modelId}" is not enabled for provider "${provider.name}"`
+        : `Provider "${provider.name}" has no enabled default model`,
+    );
   }
 
   if (provider.type === 'litellm') {
@@ -116,7 +124,7 @@ export async function resolveModel(
       provider: 'litellm',
       baseUrl: provider.base_url ?? undefined,
       apiKey,
-      modelId: selection?.modelId ?? provider.default_model_id ?? undefined,
+      modelId,
     };
   }
 
@@ -124,6 +132,6 @@ export async function resolveModel(
   // otherwise leave undefined so the runtime picks its own valid default.
   return {
     provider: 'bedrock',
-    modelId: selection?.modelId ?? provider.default_model_id ?? undefined,
+    modelId,
   };
 }

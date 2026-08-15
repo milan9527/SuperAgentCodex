@@ -1551,8 +1551,20 @@ export const translations: TranslationData = {
     cn: 'API 密钥'
   },
   'models.defaultModelId': {
-    en: 'Default Model ID (optional)',
-    cn: '默认模型 ID（可选）'
+    en: 'Default model',
+    cn: '默认模型'
+  },
+  'models.allowedModels': {
+    en: 'Models allowed for chat, agents and scopes',
+    cn: '允许用于聊天、智能体和业务域的模型'
+  },
+  'models.allowedModelsCreateHint': {
+    en: 'Enter one model id per line. Save the provider, then edit it to choose from the live LiteLLM catalog.',
+    cn: '每行输入一个模型 ID。保存来源后再次编辑，即可从 LiteLLM 实时目录中勾选。'
+  },
+  'models.allowedCount': {
+    en: 'allowed',
+    cn: '个已允许'
   },
   'models.modelIdRequired': {
     en: 'Model ID (required)',

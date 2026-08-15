@@ -26,6 +26,7 @@ export async function recordTokenUsage(input: TokenUsageInput): Promise<void> {
   try {
     const { organizationId, userId, sessionId, agentId, source, tokenUsage, model } = input;
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    const totalCostUsd = tokenUsage.totalCostUsd ?? 0;
 
     // Insert detailed log
     await prisma.token_usage_log.create({
@@ -39,7 +40,7 @@ export async function recordTokenUsage(input: TokenUsageInput): Promise<void> {
         output_tokens: tokenUsage.outputTokens,
         cache_read_input_tokens: tokenUsage.cacheReadInputTokens,
         cache_creation_input_tokens: tokenUsage.cacheCreationInputTokens,
-        total_cost_usd: tokenUsage.totalCostUsd,
+        total_cost_usd: totalCostUsd,
         model: model ?? null,
       },
     });
@@ -55,7 +56,7 @@ export async function recordTokenUsage(input: TokenUsageInput): Promise<void> {
         gen_random_uuid(), ${organizationId}::uuid, ${userId}::uuid, ${currentMonth},
         ${BigInt(tokenUsage.inputTokens)}, ${BigInt(tokenUsage.outputTokens)},
         ${BigInt(tokenUsage.cacheReadInputTokens)}, ${BigInt(tokenUsage.cacheCreationInputTokens)},
-        ${tokenUsage.totalCostUsd}::decimal, 1, NOW()
+        ${totalCostUsd}::decimal, 1, NOW()
       )
       ON CONFLICT ("organization_id", "user_id", "month")
       DO UPDATE SET

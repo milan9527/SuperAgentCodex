@@ -81,7 +81,7 @@ export function CreateBusinessScope() {
   }, [])
 
   /**
-   * All strategies now route through the AI Scope Generator (Claude Agent SDK).
+   * All strategies route through the configured AI scope-generation runtime.
    * Strategy 1: Builds a description from the department name.
    * Strategy 2: Reads the uploaded document and includes it in the description.
    * Strategy 3: Uses the user's natural language input directly.

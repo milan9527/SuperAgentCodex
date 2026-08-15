@@ -1,17 +1,18 @@
 /**
  * Agent Runtime Provider — abstraction layer for swappable AI agent backends.
  *
- * Consumers (chat.service, workflow-generator, scope-generator) program against
- * the `AgentRuntime` interface. The active implementation is selected at startup
- * via the `AGENT_RUNTIME` env var:
+ * Consumers program against the `AgentRuntime` interface. `AGENT_RUNTIME`
+ * selects the primary implementation:
  *
- *   "claude"   → ClaudeAgentService  (default, existing behavior)
- *   "openclaw" → OpenClawProvider    (OpenClaw k8s operator gateway)
+ *   "claude"    → ClaudeAgentService
+ *   "codex"     → local Codex app-server
+ *   "agentcore" → Codex app-server in AgentCore
+ *   "openclaw"  → OpenClawProvider
  *
- * AgentCore (Bedrock container isolation) remains a separate concern — it wraps
- * the Claude runtime in a container but still speaks the same ConversationEvent
- * protocol. If you enable AgentCore, the scope-bound flow uses it; system-level
- * agents (workflow-gen, scope-gen) still go through the base runtime.
+ * Codex/AgentCore deployments add invocation-level routing: supported Bedrock
+ * OpenAI Responses models stay on the primary Codex runtime, while LiteLLM
+ * selections use the retained Claude Agent SDK runtime. All implementations
+ * emit the same ConversationEvent contract.
  */
 
 import type {

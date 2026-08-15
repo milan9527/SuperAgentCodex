@@ -12,6 +12,12 @@ export interface AgentConfig {
   organizationId: string;
   skillIds: string[];
   mcpServerIds: string[];
+  /** Runtime-neutral subagent definitions for providers that support delegation. */
+  subAgents?: Record<string, {
+    description: string;
+    prompt: string;
+    skillNames?: string[];
+  }>;
 }
 
 export type ContentBlock =
@@ -41,7 +47,8 @@ export interface TokenUsage {
   outputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
-  totalCostUsd: number;
+  /** Absent when the provider reports token counts without a monetary cost. */
+  totalCostUsd?: number;
 }
 
 export interface ConversationEvent {

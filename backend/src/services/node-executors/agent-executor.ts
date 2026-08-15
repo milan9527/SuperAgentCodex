@@ -2,7 +2,8 @@
  * Agent Node Executor
  *
  * Executes agent nodes using the configured agent runtime (same as chat mode).
- * Falls back to direct Bedrock API when workspace context is unavailable.
+ * Uses direct Bedrock only for nodes that have no platform agent/workspace.
+ * Configured Codex runtimes fail closed instead of silently losing tools.
  *
  * Requirement 3.1: WHEN executing an agent node, THE Node_Executor SHALL invoke
  * the configured AI agent with the node's prompt and context.
@@ -19,6 +20,12 @@ import type {
 } from '../agent-runtime.js';
 import type { AgentConfig } from '../agent-types.js';
 import { agentStatusService } from '../agent-status.service.js';
+import {
+  extractSelection,
+  resolveModel,
+  type ResolvedModel,
+} from '../model-resolver.js';
+import { resolveInvocationRuntime } from '../agent-runtime-router.js';
 
 /**
  * Agent node metadata structure
@@ -42,7 +49,12 @@ interface AgentNodeMeta {
   version?: number;
   /** Model configuration */
   modelConfig?: {
+    provider?: string;
     modelId?: string;
+    modelSelection?: {
+      providerId?: string;
+      modelId?: string;
+    };
     temperature?: number;
     maxTokens?: number;
   };
@@ -60,7 +72,7 @@ interface AgentNodeMeta {
 /**
  * Agent node executor
  *
- * Uses Claude Agent SDK for execution when an agent has skills/workspace context.
+ * Uses the configured agent runtime when an agent has skills/workspace context.
  * Falls back to direct Bedrock API for simple agent nodes without skills.
  */
 export class AgentNodeExecutor extends BaseNodeExecutor {
@@ -69,6 +81,36 @@ export class AgentNodeExecutor extends BaseNodeExecutor {
   /** Lazy-loaded agent runtime (avoids circular imports) */
   private runtime: AgentRuntime | null = null;
   private workspaceManager: WorkspaceManager | null = null;
+  private readonly skillLoader?: (
+    organizationId: string,
+    agentId: string,
+  ) => Promise<SkillForWorkspace[]>;
+  private readonly modelResolver: (
+    organizationId: string,
+    modelConfig: AgentNodeMeta['modelConfig'],
+  ) => Promise<ResolvedModel>;
+
+  constructor(dependencies: {
+    runtime?: AgentRuntime;
+    workspaceManager?: WorkspaceManager;
+    skillLoader?: (
+      organizationId: string,
+      agentId: string,
+    ) => Promise<SkillForWorkspace[]>;
+    modelResolver?: (
+      organizationId: string,
+      modelConfig: AgentNodeMeta['modelConfig'],
+    ) => Promise<ResolvedModel>;
+  } = {}) {
+    super();
+    this.runtime = dependencies.runtime ?? null;
+    this.workspaceManager = dependencies.workspaceManager ?? null;
+    this.skillLoader = dependencies.skillLoader;
+    this.modelResolver = dependencies.modelResolver
+      ?? ((organizationId, modelConfig): Promise<ResolvedModel> => resolveModel(organizationId, {
+        agentSelection: extractSelection(modelConfig),
+      }));
+  }
 
   private async getAgentRuntime(): Promise<AgentRuntime> {
     if (!this.runtime) {
@@ -115,7 +157,7 @@ export class AgentNodeExecutor extends BaseNodeExecutor {
       query = `Context from previous steps:\n${agentContext}\n\n---\n\nTask:\n${query}`;
     }
 
-    // Determine execution path: Claude Agent SDK or direct Bedrock
+    // Determine execution path: configured agent runtime or direct Bedrock.
     const agentId = metadata?.agentId || metadata?.agent?.id;
     const organizationId = context.organizationId;
 
@@ -151,15 +193,19 @@ export class AgentNodeExecutor extends BaseNodeExecutor {
       const workspacePath = await wm.ensureWorkspace(agentId, skills);
 
       // Build agent config
+      const resolvedModel = await this.modelResolver(organizationId, metadata?.modelConfig);
       const agentConfig: AgentConfig = {
         id: agentId,
         name: metadata?.agent?.name || node.data.title || 'workflow-agent',
         displayName: metadata?.agent?.name || node.data.title || 'Workflow Agent',
         systemPrompt: metadata?.agent?.systemPrompt || null,
+        model: resolvedModel.modelId ?? metadata?.modelConfig?.modelId,
+        resolvedModel,
         organizationId,
         skillIds: skills.map(s => s.id),
         mcpServerIds: [],
       };
+      const invocationRuntime = resolveInvocationRuntime(runtime, agentConfig);
 
       // Collect full response from the async generator
       const textParts: string[] = [];
@@ -207,7 +253,7 @@ export class AgentNodeExecutor extends BaseNodeExecutor {
         result: response,
         providerThreadId,
         toolsUsed: toolUses.length > 0 ? toolUses : undefined,
-        executionMode: `${runtime.name}-runtime`,
+        executionMode: `${invocationRuntime.name}-runtime`,
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -218,8 +264,8 @@ export class AgentNodeExecutor extends BaseNodeExecutor {
         executionId: context.executionId,
       });
 
-      if (runtime.name === 'codex') {
-        return this.failure(`Codex agent execution failed: ${errorMessage}`);
+      if (runtime.name === 'codex' || runtime.name === 'agentcore') {
+        return this.failure(`Agent runtime execution failed: ${errorMessage}`);
       }
 
       // Preserve the legacy fallback for non-Codex providers.
@@ -275,6 +321,7 @@ export class AgentNodeExecutor extends BaseNodeExecutor {
    * Load skills for an agent from the database.
    */
   private async loadAgentSkills(organizationId: string, agentId: string): Promise<SkillForWorkspace[]> {
+    if (this.skillLoader) return this.skillLoader(organizationId, agentId);
     try {
       const skillEntities = await skillService.getAgentSkills(organizationId, agentId);
       return skillEntities.map(skill => ({

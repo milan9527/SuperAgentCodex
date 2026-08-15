@@ -3,6 +3,8 @@
  */
 
 export interface AgentPayload {
+  protocol_version?: 2;
+  runtime?: 'codex';
   prompt: string;
   /** Codex thread id to resume. Kept separate from the AgentCore runtime session id. */
   provider_thread_id?: string;
@@ -46,7 +48,8 @@ export interface TokenUsage {
   output_tokens: number;
   cache_read_input_tokens: number;
   cache_creation_input_tokens: number;
-  total_cost_usd: number;
+  /** Absent when Codex reports token counts without a monetary cost. */
+  total_cost_usd?: number;
 }
 
 export interface AgentEvent {
@@ -65,4 +68,9 @@ export interface AgentEvent {
   token_usage?: TokenUsage;
   diff?: string;
   plan?: Array<{ step: string; status: string }>;
+  workspace_sync?: {
+    uploaded: number;
+    deleted: number;
+    diff_uploaded: boolean;
+  };
 }

@@ -20,6 +20,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { config } from '../config/index.js';
 import { prisma } from '../config/database.js';
+import { stripGeneratedSkillContext } from './agent-skill-context.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -180,7 +181,7 @@ const s3 = new S3Client({ region: config.agentcore.region ?? config.aws.region }
 const WORKSPACE_BUCKET = config.agentcore.workspaceS3Bucket;
 const SKILLS_BUCKET = config.s3.skillsBucket;
 
-class CarryForwardService {
+export class CarryForwardService {
   /**
    * Per-scope locks to serialize concurrent carry-forward operations.
    * Without this, two sessions finishing at nearly the same moment can
@@ -256,46 +257,42 @@ class CarryForwardService {
       systemPromptUpdated: false,
     };
 
-    try {
-      // 1. Carry skills
-      result.skills = await this.carrySkills(orgId, scopeId, source);
+    // 1. Carry skills
+    result.skills = await this.carrySkills(orgId, scopeId, source);
 
-      // 2. Carry agents (subagent .md files)
-      result.agents = await this.carryAgents(orgId, scopeId, source);
+    // 2. Carry agents
+    result.agents = await this.carryAgents(orgId, scopeId, source);
 
-      // 3. Carry CLAUDE.md custom section
-      result.claudeMdUpdated = await this.carryClaudeMd(orgId, scopeId, source);
+    // 3. Carry runtime instruction custom section
+    result.claudeMdUpdated = await this.carryClaudeMd(orgId, scopeId, source);
 
-      // 4. Carry scope system prompt
-      result.systemPromptUpdated = await this.carrySystemPrompt(orgId, scopeId, source);
+    // 4. Carry scope system prompt
+    result.systemPromptUpdated = await this.carrySystemPrompt(orgId, scopeId, source);
 
-      // 5. Carry settings (MCP servers from settings.json)
-      result.settingsUpdated = await this.carrySettings(orgId, scopeId, source);
+    // 5. Carry settings (MCP servers)
+    result.settingsUpdated = await this.carrySettings(orgId, scopeId, source);
 
-      // 6. Carry hooks
-      result.hooksUpdated = await this.carryHooks(orgId, scopeId, source);
+    // 6. Carry hooks
+    result.hooksUpdated = await this.carryHooks(orgId, scopeId, source);
 
-      // 7. Bump config version if anything changed
-      const hasChanges =
-        result.skills.length > 0 ||
-        result.agents.length > 0 ||
-        result.claudeMdUpdated ||
-        result.settingsUpdated ||
-        result.hooksUpdated ||
-        result.systemPromptUpdated;
+    // 7. Bump config version if anything changed
+    const hasChanges =
+      result.skills.length > 0 ||
+      result.agents.length > 0 ||
+      result.claudeMdUpdated ||
+      result.settingsUpdated ||
+      result.hooksUpdated ||
+      result.systemPromptUpdated;
 
-      if (hasChanges) {
-        await this.bumpConfigVersion(scopeId, orgId);
-        console.log(
-          `[carry-forward] Scope ${scopeId} updated: skills=${result.skills.length}, agents=${result.agents.length}, claudeMd=${result.claudeMdUpdated}, systemPrompt=${result.systemPromptUpdated}, settings=${result.settingsUpdated}, hooks=${result.hooksUpdated}`
-        );
-      } else {
-        console.log(
-          `[carry-forward] No changes detected for scope ${scopeId} from session ${sessionId}`
-        );
-      }
-    } catch (err) {
-      console.error(`[carry-forward] Failed for scope=${scopeId} session=${sessionId}:`, err);
+    if (hasChanges) {
+      await this.bumpConfigVersion(scopeId, orgId);
+      console.log(
+        `[carry-forward] Scope ${scopeId} updated: skills=${result.skills.length}, agents=${result.agents.length}, claudeMd=${result.claudeMdUpdated}, systemPrompt=${result.systemPromptUpdated}, settings=${result.settingsUpdated}, hooks=${result.hooksUpdated}`
+      );
+    } else {
+      console.log(
+        `[carry-forward] No changes detected for scope ${scopeId} from session ${sessionId}`
+      );
     }
 
     return result;
@@ -341,11 +338,14 @@ class CarryForwardService {
         name: true,
         hash_id: true,
         version: true,
+        s3_bucket: true,
         s3_prefix: true,
         metadata: true,
       },
     });
     const scopeOwnedByName = new Map(scopeOwnedSkills.map((s) => [s.name, s]));
+    const scopeSkillsBucket =
+      scopeOwnedSkills.find(skill => skill.s3_bucket)?.s3_bucket ?? SKILLS_BUCKET;
 
     // Skills with same names owned by OTHER scopes or at org level — cannot touch
     const candidateNames = Array.from(skillFiles.keys());
@@ -356,7 +356,10 @@ class CarryForwardService {
               organization_id: orgId,
               status: 'active',
               name: { in: candidateNames },
-              NOT: { business_scope_id: scopeId },
+              OR: [
+                { business_scope_id: null },
+                { business_scope_id: { not: scopeId } },
+              ],
             },
             select: { name: true },
           })
@@ -372,12 +375,13 @@ class CarryForwardService {
     ]);
 
     const carried: string[] = [];
+    const failures: string[] = [];
 
     for (const [skillName, files] of skillFiles) {
       if (BUILTIN_SKILLS.has(skillName)) continue;
       if (cannotTouchNames.has(skillName)) {
         console.log(
-          `[carry-forward] Skill name "${skillName}" conflicts with existing skill in another scope — skipping`
+          `[carry-forward] Skill name "${skillName}" is owned outside this scope — skipping`
         );
         continue;
       }
@@ -412,7 +416,7 @@ class CarryForwardService {
           for (const { relPath, buffer } of fileBuffers) {
             await s3.send(
               new PutObjectCommand({
-                Bucket: SKILLS_BUCKET,
+                Bucket: existing.s3_bucket,
                 Key: `${existing.s3_prefix}${relPath}`,
                 Body: buffer,
               })
@@ -430,6 +434,7 @@ class CarryForwardService {
               metadata: {
                 ...meta,
                 source: meta.source ?? 'carry-forward',
+                body: skillMdContent,
                 contentHash,
                 lastCarriedAt: new Date().toISOString(),
               },
@@ -446,7 +451,7 @@ class CarryForwardService {
           for (const { relPath, buffer } of fileBuffers) {
             await s3.send(
               new PutObjectCommand({
-                Bucket: SKILLS_BUCKET,
+                Bucket: scopeSkillsBucket,
                 Key: `${s3Prefix}${relPath}`,
                 Body: buffer,
               })
@@ -463,13 +468,13 @@ class CarryForwardService {
               display_name: skillName.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
               description,
               hash_id: hashId,
-              s3_bucket: SKILLS_BUCKET,
+              s3_bucket: scopeSkillsBucket,
               s3_prefix: s3Prefix,
               version: '1.0.0',
               status: 'active',
               skill_type: 'general',
               tags: ['session-generated'],
-              metadata: { source: 'carry-forward', contentHash },
+              metadata: { source: 'carry-forward', body: skillMdContent, contentHash },
             },
           });
 
@@ -478,9 +483,13 @@ class CarryForwardService {
         }
       } catch (err) {
         console.warn(`[carry-forward] Failed to carry skill "${skillName}":`, err);
+        failures.push(`${skillName}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
+    if (failures.length > 0) {
+      throw new Error(`Failed to carry one or more skills: ${failures.join('; ')}`);
+    }
     return carried;
   }
 
@@ -535,6 +544,7 @@ class CarryForwardService {
     const existingMap = new Map(existingAgents.map((a) => [a.name, a]));
 
     const carried: string[] = [];
+    const failures: string[] = [];
 
     for (const entry of agentMdFiles) {
       const fileName = entry.relativePath.slice(AGENTS_DIR.length);
@@ -584,9 +594,13 @@ class CarryForwardService {
         }
       } catch (err) {
         console.warn(`[carry-forward] Failed to carry agent "${agentName}":`, err);
+        failures.push(`${agentName}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
+    if (failures.length > 0) {
+      throw new Error(`Failed to carry one or more agents: ${failures.join('; ')}`);
+    }
     return carried;
   }
 
@@ -781,6 +795,7 @@ class CarryForwardService {
     const BUILTIN_MCP = new Set(['agentcore-tools']);
 
     let added = false;
+    const failures: string[] = [];
 
     for (const [name, serverConfig] of Object.entries(mcpServers)) {
       if (BUILTIN_MCP.has(name)) continue;
@@ -817,9 +832,13 @@ class CarryForwardService {
         console.log(`[carry-forward] Carried MCP server: ${name}`);
       } catch (err) {
         console.warn(`[carry-forward] Failed to carry MCP server "${name}":`, err);
+        failures.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
+    if (failures.length > 0) {
+      throw new Error(`Failed to carry one or more MCP servers: ${failures.join('; ')}`);
+    }
     return added;
   }
 
@@ -989,7 +1008,7 @@ class CarryForwardService {
       name,
       displayName: displayName?.trim() || name,
       role: roleParts.length > 0 ? roleParts.join(' - ').trim() || null : null,
-      systemPrompt: instructions,
+      systemPrompt: stripGeneratedSkillContext(instructions),
     };
   }
 }

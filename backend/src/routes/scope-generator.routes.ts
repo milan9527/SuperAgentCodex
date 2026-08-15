@@ -1,6 +1,6 @@
 /**
  * Scope Generator Routes
- * AI-powered business scope generation using Claude Agent SDK.
+ * AI-powered business scope generation through the configured agent runtime.
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';

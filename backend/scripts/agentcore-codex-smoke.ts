@@ -17,6 +17,11 @@ interface AgentCoreEvent {
   provider_thread_id?: string;
   provider_turn_id?: string;
   content?: Array<{ type?: string; text?: string }>;
+  workspace_sync?: {
+    uploaded?: number;
+    deleted?: number;
+    diff_uploaded?: boolean;
+  };
 }
 
 const runtimeArn = requiredEnv('AGENTCORE_RUNTIME_ARN');
@@ -46,6 +51,8 @@ await s3.send(new PutObjectCommand({
 }));
 
 const payload = {
+  protocol_version: 2,
+  runtime: 'codex',
   prompt: [
     `Create codex-agentcore-proof.txt containing exactly ${expectedFile} followed by a newline.`,
     `Then respond with exactly ${expectedResponse} and no other text.`,
@@ -75,6 +82,7 @@ let buffer = '';
 let assistantText = '';
 let terminal: AgentCoreEvent | undefined;
 const events: AgentCoreEvent[] = [];
+let terminalCount = 0;
 
 for await (const chunk of response.response) {
   buffer += Buffer.from(chunk).toString('utf8');
@@ -92,7 +100,10 @@ for await (const chunk of response.response) {
           .join('') ?? '';
         assistantText += text;
       }
-      if (event.type === 'result' || event.type === 'error') terminal = event;
+      if (event.type === 'result' || event.type === 'error') {
+        terminal = event;
+        terminalCount++;
+      }
     }
   }
 }
@@ -100,6 +111,16 @@ for await (const chunk of response.response) {
 if (terminal?.type !== 'result' || terminal.status !== 'completed') {
   throw new Error(
     `AgentCore Codex did not complete: ${JSON.stringify(terminal ?? events.at(-1))}`,
+  );
+}
+if (terminalCount !== 1) {
+  throw new Error(`Expected exactly one terminal event, got ${terminalCount}`);
+}
+const syncIndex = events.findIndex(event => event.workspace_sync);
+const terminalIndex = events.findIndex(event => event === terminal);
+if (syncIndex < 0 || terminalIndex < 0 || syncIndex >= terminalIndex) {
+  throw new Error(
+    `Workspace sync must be confirmed before terminal: ${JSON.stringify(events)}`,
   );
 }
 const streamedText = assistantText.trim();
@@ -130,6 +151,7 @@ console.log(JSON.stringify({
   providerTurnId: terminal.provider_turn_id,
   response: expectedResponse,
   proof: proofText.trim(),
+  workspaceSync: events[syncIndex]?.workspace_sync,
 }, null, 2));
 
 function requiredEnv(name: string): string {

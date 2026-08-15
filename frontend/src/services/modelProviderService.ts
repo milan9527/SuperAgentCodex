@@ -12,11 +12,12 @@ export interface CreateModelProviderInput {
   base_url?: string | null
   api_key?: string | null
   default_model_id?: string | null
+  allowed_model_ids?: string[]
   is_org_default?: boolean
 }
 
 export type UpdateModelProviderInput = Partial<
-  Pick<CreateModelProviderInput, 'name' | 'base_url' | 'api_key' | 'default_model_id' | 'is_org_default'>
+  Pick<CreateModelProviderInput, 'name' | 'base_url' | 'api_key' | 'default_model_id' | 'allowed_model_ids' | 'is_org_default'>
 >
 
 export const modelProviderService = {

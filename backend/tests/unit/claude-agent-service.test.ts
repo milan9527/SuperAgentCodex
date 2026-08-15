@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   ClaudeAgentService,
   transformMCPServers,
@@ -14,6 +17,7 @@ import {
   type SDKResultMessage,
   type SDKSystemMessage,
   type QueryFactory,
+  type ClaudeQueryPrompt,
 } from '../../src/services/claude-agent.service.js';
 import { WorkspaceManager } from '../../src/services/workspace-manager.js';
 
@@ -53,9 +57,9 @@ function makeMCPServerRecord(overrides?: Partial<MCPServerRecord>): MCPServerRec
  */
 function createMockQueryFactory(
   messages: SDKMessage[],
-  capturedCalls?: Array<{ prompt: string; options?: ClaudeCodeOptions }>,
+  capturedCalls?: Array<{ prompt: ClaudeQueryPrompt; options?: ClaudeCodeOptions }>,
 ): QueryFactory {
-  return (args: { prompt: string; options?: ClaudeCodeOptions }) => {
+  return (args: { prompt: ClaudeQueryPrompt; options?: ClaudeCodeOptions }) => {
     capturedCalls?.push(args);
     const gen = (async function* () {
       for (const msg of messages) {
@@ -206,6 +210,51 @@ describe('claude-agent.service', () => {
       expect(opts.model).toBeDefined();
       expect(typeof opts.model).toBe('string');
     });
+
+    it('routes LiteLLM through Claude without loading Claude project settings', () => {
+      const opts = service.buildOptions(
+        makeAgentConfig({
+          resolvedModel: {
+            provider: 'litellm',
+            modelId: 'anthropic/claude-sonnet-4-6',
+            baseUrl: 'https://litellm.example.com',
+            apiKey: 'test-gateway-key',
+          },
+          subAgents: {
+            reviewer: {
+              description: 'Reviews the result',
+              prompt: 'Review carefully.',
+              skillNames: ['review-skill'],
+            },
+          },
+        }),
+        '/workspace',
+        ['review-skill'],
+        {},
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        '# Project instructions',
+      );
+
+      expect(opts.model).toBe('opus');
+      expect(opts.settingSources).toEqual([]);
+      expect(opts.env?.ANTHROPIC_BASE_URL).toBe('https://litellm.example.com');
+      expect(opts.env?.ANTHROPIC_AUTH_TOKEN).toBe('test-gateway-key');
+      expect(opts.env?.ANTHROPIC_API_KEY).toBe('test-gateway-key');
+      expect(opts.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('anthropic/claude-sonnet-4-6');
+      expect(opts.env?.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
+      expect(opts.env?.CLAUDE_CONFIG_DIR).toContain('super-agent-claude-runtime');
+      expect(opts.env?.CLAUDE_CONFIG_DIR).not.toContain('/workspace/');
+      expect(opts.env?.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC).toBe('1');
+      expect(opts.env?.DISABLE_TELEMETRY).toBe('1');
+      expect(opts.systemPrompt).toContain('<project_instructions>');
+      expect(opts.systemPrompt).toContain('# Project instructions');
+      expect(opts.systemPrompt).toContain('.agents/skills/review-skill/SKILL.md');
+      expect(opts.agents?.reviewer?.prompt).toContain('Review carefully.');
+      expect(opts.agents?.reviewer?.prompt).toContain('.agents/skills/review-skill/SKILL.md');
+    });
   });
 
   // =========================================================================
@@ -335,7 +384,7 @@ describe('claude-agent.service', () => {
     });
 
     it('should pass the user message as prompt to query()', async () => {
-      const capturedCalls: Array<{ prompt: string; options?: ClaudeCodeOptions }> = [];
+      const capturedCalls: Array<{ prompt: ClaudeQueryPrompt; options?: ClaudeCodeOptions }> = [];
       const messages: SDKMessage[] = [makeSystemMsg('sess-abc'), makeResultMsg('sess-abc')];
 
       const service = new ClaudeAgentService(createMockWorkspaceManager(), createMockQueryFactory(messages, capturedCalls));
@@ -349,6 +398,117 @@ describe('claude-agent.service', () => {
 
       expect(capturedCalls).toHaveLength(1);
       expect(capturedCalls[0].prompt).toBe('What is 2+2?');
+    });
+
+    it('injects AGENTS.md and bounded history when switching from Codex', async () => {
+      const workspace = await mkdtemp(join(tmpdir(), 'claude-litellm-history-'));
+      const capturedCalls: Array<{ prompt: ClaudeQueryPrompt; options?: ClaudeCodeOptions }> = [];
+      try {
+        await writeFile(
+          join(workspace, 'AGENTS.md'),
+          '# Canonical project guidance\nUse the project rules.',
+        );
+        const service = new ClaudeAgentService(
+          createMockWorkspaceManager(),
+          createMockQueryFactory(
+            [makeSystemMsg('sess-history'), makeResultMsg('sess-history')],
+            capturedCalls,
+          ),
+        );
+
+        for await (const _event of service.runConversation(
+          {
+            agentId: 'agent-001',
+            message: 'Continue the task',
+            organizationId: 'org-001',
+            userId: 'user-001',
+            workspacePath: workspace,
+            history: [
+              { role: 'user', content: 'Earlier request' },
+              { role: 'assistant', content: 'Earlier answer' },
+            ],
+          },
+          makeAgentConfig({
+            resolvedModel: {
+              provider: 'litellm',
+              modelId: 'claude-sonnet',
+              baseUrl: 'https://litellm.example.com',
+              apiKey: 'test-key',
+            },
+          }),
+          [],
+        )) { /* consume */ }
+
+        expect(capturedCalls[0]?.prompt).toEqual(expect.stringContaining('Earlier request'));
+        expect(capturedCalls[0]?.prompt).toEqual(expect.stringContaining('Current user request'));
+        expect(capturedCalls[0]?.options?.systemPrompt).toContain('# Canonical project guidance');
+        expect(capturedCalls[0]?.options?.settingSources).toEqual([]);
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
+    });
+
+    it('sends workspace images as base64 user content to LiteLLM Claude', async () => {
+      const workspace = await mkdtemp(join(tmpdir(), 'claude-litellm-image-'));
+      const capturedCalls: Array<{ prompt: ClaudeQueryPrompt; options?: ClaudeCodeOptions }> = [];
+      try {
+        await mkdir(join(workspace, 'uploads'), { recursive: true });
+        await writeFile(
+          join(workspace, 'uploads', 'pixel.png'),
+          Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            'base64',
+          ),
+        );
+        const service = new ClaudeAgentService(
+          createMockWorkspaceManager(),
+          createMockQueryFactory(
+            [makeSystemMsg('sess-image'), makeResultMsg('sess-image')],
+            capturedCalls,
+          ),
+        );
+
+        for await (const _event of service.runConversation(
+          {
+            agentId: 'agent-001',
+            message: 'Describe the image',
+            organizationId: 'org-001',
+            userId: 'user-001',
+            workspacePath: workspace,
+            imagePaths: ['uploads/pixel.png'],
+          },
+          makeAgentConfig({
+            resolvedModel: {
+              provider: 'litellm',
+              modelId: 'claude-sonnet',
+              baseUrl: 'https://litellm.example.com',
+              apiKey: 'test-key',
+            },
+          }),
+          [],
+        )) { /* consume */ }
+
+        const prompt = capturedCalls[0]?.prompt;
+        expect(typeof prompt).not.toBe('string');
+        const messages = [];
+        if (typeof prompt !== 'string' && prompt) {
+          for await (const message of prompt) messages.push(message);
+        }
+        expect(messages).toHaveLength(1);
+        expect(messages[0]?.message.content[0]).toEqual({
+          type: 'text',
+          text: 'Describe the image',
+        });
+        expect(messages[0]?.message.content[1]).toEqual(expect.objectContaining({
+          type: 'image',
+          source: expect.objectContaining({
+            type: 'base64',
+            media_type: 'image/png',
+          }),
+        }));
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+      }
     });
 
     it('should remove session from map after conversation completes', async () => {
@@ -389,7 +549,7 @@ describe('claude-agent.service', () => {
     });
 
     it('should NOT pass DB session ID as SDK resume (DB IDs are not Claude session IDs)', async () => {
-      const capturedCalls: Array<{ prompt: string; options?: ClaudeCodeOptions }> = [];
+      const capturedCalls: Array<{ prompt: ClaudeQueryPrompt; options?: ClaudeCodeOptions }> = [];
       const messages: SDKMessage[] = [makeSystemMsg('sess-resume'), makeResultMsg('sess-resume')];
 
       const service = new ClaudeAgentService(createMockWorkspaceManager(), createMockQueryFactory(messages, capturedCalls));

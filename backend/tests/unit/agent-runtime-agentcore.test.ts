@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -9,7 +9,10 @@ import {
   type S3Client,
 } from '@aws-sdk/client-s3';
 import { describe, expect, it } from 'vitest';
-import { AgentCoreAgentRuntime } from '../../src/services/agent-runtime-agentcore.js';
+import {
+  AgentCoreAgentRuntime,
+  isPersistedChatSessionId,
+} from '../../src/services/agent-runtime-agentcore.js';
 import type { AgentConfig } from '../../src/services/agent-types.js';
 
 class FakeInvokeCommand {
@@ -32,6 +35,12 @@ const agentConfig: AgentConfig = {
 };
 
 describe('AgentCoreAgentRuntime Codex integration', () => {
+  it('only loads database history for persisted UUID chat sessions', () => {
+    expect(isPersistedChatSessionId('5034b493-42e6-4ff8-9e13-a0e474824fc9')).toBe(true);
+    expect(isPersistedChatSessionId('scope-gen-1786681698673-71jlzh')).toBe(false);
+    expect(isPersistedChatSessionId(undefined)).toBe(false);
+  });
+
   it('sends Codex thread, image, history, and model-provider fields', async () => {
     const workspace = await mkdtemp(join(tmpdir(), 'agentcore-runtime-'));
     await writeFile(join(workspace, 'image.png'), Buffer.from([137, 80, 78, 71]));
@@ -79,6 +88,8 @@ describe('AgentCoreAgentRuntime Codex integration', () => {
 
       const payload = JSON.parse(commandInput?.payload as string);
       expect(payload).toMatchObject({
+        protocol_version: 2,
+        runtime: 'codex',
         provider_thread_id: 'thread-existing',
         model: 'openai.gpt-5.4',
         model_provider: 'amazon-bedrock',
@@ -97,6 +108,7 @@ describe('AgentCoreAgentRuntime Codex integration', () => {
         status: 'completed',
         providerTurnId: 'turn-1',
       });
+      expect(s3.listCalls).toBeGreaterThanOrEqual(2);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }
@@ -175,16 +187,100 @@ describe('AgentCoreAgentRuntime Codex integration', () => {
       await rm(workspace, { recursive: true, force: true });
     }
   });
+
+  it('fails before invocation when the initial workspace upload fails', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'agentcore-upload-failure-'));
+    await writeFile(join(workspace, 'input.txt'), 'input');
+    let invoked = false;
+    const s3 = {
+      async send(command: unknown): Promise<unknown> {
+        if (command instanceof PutObjectCommand) throw new Error('upload denied');
+        if (command instanceof ListObjectsV2Command) return { Contents: [] };
+        throw new Error(`Unexpected command: ${String(command)}`);
+      },
+    } as unknown as S3Client;
+    const runtime = new AgentCoreAgentRuntime({
+      runtimeClient: {
+        async send(): Promise<unknown> {
+          invoked = true;
+          return {};
+        },
+      },
+      InvokeCommand: FakeInvokeCommand,
+      s3Client: s3,
+      runtimeArn: 'arn:aws:bedrock-agentcore:us-east-1:123:runtime/new',
+      workspaceBucket: 'workspace-bucket',
+    });
+
+    try {
+      const consume = async (): Promise<void> => {
+        for await (const _event of runtime.runConversation({
+          agentId: 'agent-1',
+          sessionId: 'platform-session-that-is-long-enough-789',
+          message: 'do not run',
+          history: [],
+          organizationId: 'org-1',
+          userId: 'user-1',
+          workspacePath: workspace,
+        }, agentConfig, [])) {
+          // The generator must fail before producing provider events.
+        }
+      };
+      await expect(consume()).rejects.toThrow('Workspace upload failed');
+      expect(invoked).toBe(false);
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to sync through a workspace symlink', async () => {
+    const workspace = await mkdtemp(join(tmpdir(), 'agentcore-sync-symlink-'));
+    const outside = await mkdtemp(join(tmpdir(), 'agentcore-sync-outside-'));
+    await writeFile(join(outside, 'secret.txt'), 'unchanged');
+    await symlink(outside, join(workspace, 'linked'));
+    const s3 = {
+      async send(command: unknown): Promise<unknown> {
+        if (command instanceof ListObjectsV2Command) {
+          return { Contents: [{ Key: 'prefix/linked/secret.txt' }] };
+        }
+        if (command instanceof GetObjectCommand) {
+          return { Body: Readable.from(['overwritten']) };
+        }
+        throw new Error(`Unexpected command: ${String(command)}`);
+      },
+    } as unknown as S3Client;
+    const runtime = new AgentCoreAgentRuntime({
+      runtimeClient: { send: async () => ({}) },
+      InvokeCommand: FakeInvokeCommand,
+      s3Client: s3,
+      runtimeArn: 'arn:aws:bedrock-agentcore:us-east-1:123:runtime/new',
+      workspaceBucket: 'workspace-bucket',
+    });
+
+    try {
+      await expect(runtime.syncBackFromS3('prefix/', workspace))
+        .rejects.toThrow('Unsafe workspace parent');
+      await expect(readFile(join(outside, 'secret.txt'), 'utf8')).resolves.toBe('unchanged');
+    } finally {
+      await rm(workspace, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
 });
 
-function createS3Mock(): S3Client {
-  return {
+function createS3Mock(): S3Client & { listCalls: number } {
+  const mock = {
+    listCalls: 0,
     async send(command: unknown): Promise<unknown> {
       if (command instanceof PutObjectCommand) return {};
-      if (command instanceof ListObjectsV2Command) return { Contents: [] };
+      if (command instanceof ListObjectsV2Command) {
+        mock.listCalls++;
+        return { Contents: [] };
+      }
       throw new Error(`Unexpected S3 command: ${String(command)}`);
     },
-  } as unknown as S3Client;
+  };
+  return mock as unknown as S3Client & { listCalls: number };
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

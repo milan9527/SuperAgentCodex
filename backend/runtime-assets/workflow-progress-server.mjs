@@ -18,6 +18,11 @@ server.registerTool(
   'workflow_step_start',
   {
     description: 'Signal that a workflow step is starting.',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
     inputSchema: {
       taskId: z.string().describe('Task ID from the workflow execution plan'),
     },
@@ -32,6 +37,11 @@ server.registerTool(
   'workflow_step_complete',
   {
     description: 'Signal that a workflow step completed successfully.',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
     inputSchema: {
       taskId: z.string().describe('Task ID from the workflow execution plan'),
       summary: z.string().optional().describe('Brief completion summary'),
@@ -52,6 +62,11 @@ server.registerTool(
   'workflow_step_failed',
   {
     description: 'Signal that a workflow step failed.',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
     inputSchema: {
       taskId: z.string().describe('Task ID from the workflow execution plan'),
       reason: z.string().optional().describe('Failure reason'),
