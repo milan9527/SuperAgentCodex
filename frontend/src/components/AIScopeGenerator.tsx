@@ -391,11 +391,6 @@ export function AIScopeGenerator() {
           ...prev,
           { type: 'text', text: '\n\n✅ Generation complete. Parsing results...' },
         ]);
-      } else if (event.type === 'error') {
-        setContentBlocks(prev => [
-          ...prev,
-          { type: 'text', text: `\n\n❌ Error: ${event.message}` },
-        ]);
       }
     };
 

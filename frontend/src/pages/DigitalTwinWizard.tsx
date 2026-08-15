@@ -302,8 +302,6 @@ export function DigitalTwinWizard() {
             })
           } else if (event.type === 'result') {
             setContentBlocks(prev => [...prev, { type: 'text', text: isCn ? '\n\n✅ 生成完成。' : '\n\n✅ Generation complete.' }])
-          } else if (event.type === 'error') {
-            setContentBlocks(prev => [...prev, { type: 'text', text: `\n\n❌ Error: ${event.message}` }])
           }
         }
 

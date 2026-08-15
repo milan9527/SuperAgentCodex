@@ -62,7 +62,15 @@ export async function scopeGeneratorRoutes(fastify: FastifyInstance): Promise<vo
     }, 15_000);
 
     try {
-      const generator = scopeGeneratorService.generate(description.trim(), undefined, language);
+      const generator = scopeGeneratorService.generate(
+        description.trim(),
+        {
+          organizationId: request.user!.orgId,
+          userId: request.user!.id,
+        },
+        undefined,
+        language,
+      );
 
       for await (const event of generator) {
         if (clientDisconnected) break;
@@ -160,10 +168,18 @@ export async function scopeGeneratorRoutes(fastify: FastifyInstance): Promise<vo
     }, 15_000);
 
     try {
-      const generator = scopeGeneratorService.generate(description.trim(), {
-        buffer: fileBuffer,
-        fileName: data.filename || 'document',
-      }, language);
+      const generator = scopeGeneratorService.generate(
+        description.trim(),
+        {
+          organizationId: request.user!.orgId,
+          userId: request.user!.id,
+        },
+        {
+          buffer: fileBuffer,
+          fileName: data.filename || 'document',
+        },
+        language,
+      );
 
       for await (const event of generator) {
         if (clientDisconnected) break;
@@ -375,6 +391,10 @@ export async function scopeGeneratorRoutes(fastify: FastifyInstance): Promise<vo
     try {
       const generator = scopeGeneratorService.generateTwin(
         { displayName, role, description },
+        {
+          organizationId: request.user!.orgId,
+          userId: request.user!.id,
+        },
         documents,
       );
 

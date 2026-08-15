@@ -65,7 +65,7 @@ export type GenerateCallback = (event: SSEEvent) => void;
  * Intermediate `assistant` events (tool calls, thinking) are forwarded to onEvent
  * for UI rendering but not included in the parseable output.
  */
-async function processSSEStream(
+export async function processSSEStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   onEvent: GenerateCallback,
 ): Promise<string> {
@@ -89,35 +89,42 @@ async function processSSEStream(
       const data = line.slice(6).trim();
       if (data === '[DONE]') continue;
 
+      let event: SSEEvent;
       try {
-        const event: SSEEvent = JSON.parse(data);
-        onEvent(event);
-
-        // Capture the scope_config event (file-based JSON from workspace)
-        if (event.type === 'scope_config' && typeof event.content === 'string') {
-          scopeConfigJson = event.content;
-        }
-
-        // Also accumulate text from assistant and result events as fallback
-        if ((event.type === 'result' || event.type === 'assistant') && Array.isArray(event.content)) {
-          for (const block of event.content) {
-            if (block.type === 'text' && block.text) {
-              if (event.type === 'result') {
-                resultText += block.text;
-              }
-              assistantText += block.text;
-            }
-            if (block.type === 'tool_use' && block.input) {
-              const inputStr = typeof block.input === 'string' ? block.input : JSON.stringify(block.input);
-              if (event.type === 'result') {
-                resultText += inputStr;
-              }
-              assistantText += inputStr;
-            }
-          }
-        }
+        event = JSON.parse(data) as SSEEvent;
       } catch {
         // skip unparseable lines
+        continue;
+      }
+
+      onEvent(event);
+
+      if (event.type === 'error') {
+        throw new Error(event.message || event.code || 'AI generation failed');
+      }
+
+      // Capture the scope_config event (file-based JSON from workspace)
+      if (event.type === 'scope_config' && typeof event.content === 'string') {
+        scopeConfigJson = event.content;
+      }
+
+      // Also accumulate text from assistant and result events as fallback
+      if ((event.type === 'result' || event.type === 'assistant') && Array.isArray(event.content)) {
+        for (const block of event.content) {
+          if (block.type === 'text' && block.text) {
+            if (event.type === 'result') {
+              resultText += block.text;
+            }
+            assistantText += block.text;
+          }
+          if (block.type === 'tool_use' && block.input) {
+            const inputStr = typeof block.input === 'string' ? block.input : JSON.stringify(block.input);
+            if (event.type === 'result') {
+              resultText += inputStr;
+            }
+            assistantText += inputStr;
+          }
+        }
       }
     }
   }

@@ -11,12 +11,13 @@
  */
 
 import { agentRuntime } from './agent-runtime-factory.js';
-import type { AgentConfig, ConversationEvent } from './agent-runtime.js';
+import type { AgentConfig, AgentRuntime, ConversationEvent } from './agent-runtime.js';
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { existsSync } from 'fs';
 import { config } from '../config/index.js';
+import { resolveModel, type ResolvedModel } from './model-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,6 +48,16 @@ export interface GeneratedScopeConfig {
   scope: GeneratedScope;
   agents: GeneratedAgent[];
 }
+
+export interface ScopeGenerationContext {
+  organizationId: string;
+  userId: string;
+}
+
+type ScopeModelResolver = (
+  organizationId: string,
+  input: Parameters<typeof resolveModel>[1],
+) => Promise<ResolvedModel>;
 
 // ---------------------------------------------------------------------------
 // System prompt for scope generation
@@ -347,6 +358,37 @@ async function readConfigFile(
 // ---------------------------------------------------------------------------
 
 export class ScopeGeneratorService {
+  private readonly runtime: AgentRuntime;
+  private readonly modelResolver: ScopeModelResolver;
+
+  constructor(dependencies: {
+    runtime?: AgentRuntime;
+    modelResolver?: ScopeModelResolver;
+  } = {}) {
+    this.runtime = dependencies.runtime ?? agentRuntime;
+    this.modelResolver = dependencies.modelResolver ?? resolveModel;
+  }
+
+  private async buildAgentConfig(
+    id: 'scope-generator' | 'twin-generator',
+    displayName: string,
+    systemPrompt: string,
+    context: ScopeGenerationContext,
+  ): Promise<AgentConfig> {
+    const resolvedModel = await this.modelResolver(context.organizationId, {});
+    return {
+      id,
+      name: id,
+      displayName,
+      organizationId: context.organizationId,
+      systemPrompt,
+      model: resolvedModel.modelId,
+      resolvedModel,
+      skillIds: [],
+      mcpServerIds: [],
+    };
+  }
+
   /**
    * Generate a scope configuration by streaming Claude's response.
    * Yields ConversationEvents that can be forwarded as SSE.
@@ -359,16 +401,18 @@ export class ScopeGeneratorService {
    * @param sopDocument - Optional SOP document buffer + filename to place in the workspace.
    *                      The agent will be instructed to read and parse it using its tools.
    */
-  async *generate(businessDescription: string, sopDocument?: { buffer: Buffer; fileName: string }, language?: string): AsyncGenerator<ConversationEvent> {
-      const agentConfig: AgentConfig = {
-        id: 'scope-generator',
-        name: 'scope-generator',
-        displayName: 'Scope Generator',
-        organizationId: 'system',
-        systemPrompt: buildSystemPrompt(language),
-        skillIds: [],
-        mcpServerIds: [],
-      };
+  async *generate(
+    businessDescription: string,
+    context: ScopeGenerationContext,
+    sopDocument?: { buffer: Buffer; fileName: string },
+    language?: string,
+  ): AsyncGenerator<ConversationEvent> {
+      const agentConfig = await this.buildAgentConfig(
+        'scope-generator',
+        'Scope Generator',
+        buildSystemPrompt(language),
+        context,
+      );
 
       // Always create a fresh temp workspace (consistent across all strategies)
       const tempWorkspace = await mkdtemp(join(tmpdir(), 'scope-gen-'));
@@ -403,7 +447,7 @@ export class ScopeGeneratorService {
 
       // Compute S3 prefix for AgentCore mode (must match what AgentCoreAgentRuntime builds)
       const s3Prefix = config.agentRuntime === 'agentcore'
-        ? `system/system/${sessionId}/`
+        ? `${context.organizationId}/system/${sessionId}/`
         : undefined;
 
       try {
@@ -412,13 +456,13 @@ export class ScopeGeneratorService {
         // retrieval fails — e.g. AgentCore container doesn't sync to S3 in time)
         const allTextBlocks: string[] = [];
 
-        for await (const event of agentRuntime.runConversation(
+        for await (const event of this.runtime.runConversation(
           {
             agentId: 'scope-generator',
             sessionId,
             message,
-            organizationId: 'system',
-            userId: 'system',
+            organizationId: context.organizationId,
+            userId: context.userId,
             workspacePath: tempWorkspace,
             scopeId: 'system',
           },
@@ -589,7 +633,7 @@ export class ScopeGeneratorService {
       content: [{ type: 'text', text: '\n\n🔄 Validating and repairing scope configuration...\n' }],
     } as unknown as ConversationEvent;
 
-    yield* agentRuntime.runConversation(
+    yield* this.runtime.runConversation(
       {
         agentId: 'scope-generator',
         sessionId,
@@ -610,6 +654,7 @@ export class ScopeGeneratorService {
    */
   async *generateTwin(
     twinInfo: { displayName: string; role: string; description: string },
+    context: ScopeGenerationContext,
     documents?: Array<{ buffer: Buffer; fileName: string }>,
   ): AsyncGenerator<ConversationEvent> {
     const TWIN_SYSTEM_PROMPT = `You are a Digital Twin architect. Your ONLY job is to generate a digital twin configuration JSON that is HIGHLY SPECIFIC to the person's role and expertise. You must NEVER ask questions. Work with whatever information is provided.
@@ -648,15 +693,12 @@ QUALITY CHECK — before outputting, verify:
 - Would a "${twinInfo.role}" actually use these skills daily?
 - If any skill is generic (like "problem-solving" or "communication"), REPLACE it with a domain-specific one.`;
 
-    const agentConfig: AgentConfig = {
-      id: 'twin-generator',
-      name: 'twin-generator',
-      displayName: 'Digital Twin Generator',
-      organizationId: 'system',
-      systemPrompt: TWIN_SYSTEM_PROMPT,
-      skillIds: [],
-      mcpServerIds: [],
-    };
+    const agentConfig = await this.buildAgentConfig(
+      'twin-generator',
+      'Digital Twin Generator',
+      TWIN_SYSTEM_PROMPT,
+      context,
+    );
 
     const tempWorkspace = await mkdtemp(join(tmpdir(), 'twin-gen-'));
     const configFilePath = join(tempWorkspace, 'scope-config.json');
@@ -698,8 +740,8 @@ QUALITY CHECK — before outputting, verify:
       // Use a unique session ID per generation to avoid AgentCore session reuse
       const uniqueSessionId = `twin-gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-      for await (const event of agentRuntime.runConversation(
-        { agentId: 'twin-generator', sessionId: uniqueSessionId, message, organizationId: 'system', userId: 'system', workspacePath: tempWorkspace, scopeId: 'system' },
+      for await (const event of this.runtime.runConversation(
+        { agentId: 'twin-generator', sessionId: uniqueSessionId, message, organizationId: context.organizationId, userId: context.userId, workspacePath: tempWorkspace, scopeId: 'system' },
         agentConfig,
         [],
       )) {
