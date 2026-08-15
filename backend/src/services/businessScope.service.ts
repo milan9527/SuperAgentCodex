@@ -460,7 +460,13 @@ export class BusinessScopeService {
       throw AppError.notFound(`Business scope with ID ${businessScopeId} not found`);
     }
 
-    const skills = await skillRepository.findByBusinessScope(organizationId, businessScopeId);
+    const [agentSkills, scopeSkills] = await Promise.all([
+      skillRepository.findByBusinessScope(organizationId, businessScopeId),
+      skillRepository.findScopeLevelSkills(organizationId, businessScopeId),
+    ]);
+    const skills = Array.from(
+      new Map([...agentSkills, ...scopeSkills].map(skill => [skill.id, skill])).values(),
+    );
     
     return skills.map(s => ({
       id: s.id,

@@ -11,6 +11,7 @@ import { config } from '../config/index.js';
 import { modelProviderRepository } from '../repositories/model-provider.repository.js';
 import { credentialVaultService } from '../services/credential-vault.service.js';
 import { listBedrockModels } from '../services/bedrock-models.service.js';
+import { normalizeLiteLLMBaseUrl } from '../utils/litellm-base-url.js';
 
 export async function litellmRoutes(fastify: FastifyInstance): Promise<void> {
   /**
@@ -81,7 +82,7 @@ export async function litellmRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.status(200).send({ data: [] });
       }
 
-      const base = baseUrl.replace(/\/+$/, '');
+      const base = normalizeLiteLLMBaseUrl(baseUrl);
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 

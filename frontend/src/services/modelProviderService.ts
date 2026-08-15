@@ -6,6 +6,13 @@
 import { restClient } from './api/restClient'
 import type { ModelProvider } from '@/types'
 
+export const MODEL_PROVIDERS_CHANGED_EVENT = 'super-agent:model-providers-changed'
+
+function notifyModelProvidersChanged(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(MODEL_PROVIDERS_CHANGED_EVENT))
+}
+
 export interface CreateModelProviderInput {
   name: string
   type: 'bedrock' | 'litellm'
@@ -27,23 +34,32 @@ export const modelProviderService = {
   },
 
   async create(input: CreateModelProviderInput): Promise<ModelProvider> {
-    return restClient.post<ModelProvider>('/api/model-providers', input)
+    const provider = await restClient.post<ModelProvider>('/api/model-providers', input)
+    notifyModelProvidersChanged()
+    return provider
   },
 
   async update(id: string, input: UpdateModelProviderInput): Promise<ModelProvider> {
-    return restClient.patch<ModelProvider>(`/api/model-providers/${id}`, input)
+    const provider = await restClient.patch<ModelProvider>(`/api/model-providers/${id}`, input)
+    notifyModelProvidersChanged()
+    return provider
   },
 
   async remove(id: string): Promise<void> {
     await restClient.delete(`/api/model-providers/${id}`)
+    notifyModelProvidersChanged()
   },
 
   async setDefault(id: string): Promise<ModelProvider> {
-    return restClient.post<ModelProvider>(`/api/model-providers/${id}/default`)
+    const provider = await restClient.post<ModelProvider>(`/api/model-providers/${id}/default`)
+    notifyModelProvidersChanged()
+    return provider
   },
 
   async setEnabled(id: string, enabled: boolean): Promise<ModelProvider> {
-    return restClient.patch<ModelProvider>(`/api/model-providers/${id}`, { enabled })
+    const provider = await restClient.patch<ModelProvider>(`/api/model-providers/${id}`, { enabled })
+    notifyModelProvidersChanged()
+    return provider
   },
 
   /** List models for a provider (litellm gateway or live Bedrock region list). */

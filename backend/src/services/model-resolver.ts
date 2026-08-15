@@ -11,6 +11,11 @@ import { modelProviderRepository } from '../repositories/model-provider.reposito
 import { credentialVaultService } from './credential-vault.service.js';
 import type { ModelSelection } from '../schemas/model-provider.schema.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { normalizeLiteLLMBaseUrl } from '../utils/litellm-base-url.js';
+import {
+  isCodexBedrockModelId,
+  normalizeCodexBedrockModelId,
+} from '../utils/bedrock-openai-model.js';
 
 export interface ResolvedModel {
   provider: 'bedrock' | 'litellm';
@@ -30,9 +35,7 @@ interface ResolveInput {
 
 /** Codex's Bedrock provider requires an OpenAI Responses-compatible model. */
 export function isCodexBedrockModel(modelId: string | undefined): boolean {
-  if (!modelId) return false;
-  const id = modelId.toLowerCase();
-  return id.startsWith('openai.gpt-5') || id.startsWith('gpt-5');
+  return isCodexBedrockModelId(modelId);
 }
 
 /**
@@ -96,12 +99,18 @@ export async function resolveModel(
     return { provider: 'bedrock', modelId: selectedModelId };
   }
 
-  const allowedModelIds = provider.allowed_model_ids?.length
+  const configuredAllowedModelIds = provider.allowed_model_ids?.length
     ? provider.allowed_model_ids
     : provider.default_model_id
       ? [provider.default_model_id]
       : [];
-  const modelId = selectedModelId ?? provider.default_model_id ?? undefined;
+  const allowedModelIds = provider.type === 'bedrock'
+    ? configuredAllowedModelIds.map(modelId => normalizeCodexBedrockModelId(modelId) ?? modelId)
+    : configuredAllowedModelIds;
+  const configuredModelId = selectedModelId ?? provider.default_model_id ?? undefined;
+  const modelId = provider.type === 'bedrock'
+    ? normalizeCodexBedrockModelId(configuredModelId)
+    : configuredModelId;
   if (!modelId || !allowedModelIds.includes(modelId)) {
     throw AppError.validation(
       modelId
@@ -122,7 +131,9 @@ export async function resolveModel(
     }
     return {
       provider: 'litellm',
-      baseUrl: provider.base_url ?? undefined,
+      baseUrl: provider.base_url
+        ? normalizeLiteLLMBaseUrl(provider.base_url)
+        : undefined,
       apiKey,
       modelId,
     };
@@ -132,6 +143,6 @@ export async function resolveModel(
   // otherwise leave undefined so the runtime picks its own valid default.
   return {
     provider: 'bedrock',
-    modelId,
+    modelId: normalizeCodexBedrockModelId(modelId),
   };
 }

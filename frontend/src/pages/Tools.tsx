@@ -9,6 +9,7 @@ import {
   Network, DollarSign, Heart, Layers,
   Github, Link, CheckCircle2, AlertCircle, X,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { restClient } from '@/services/api/restClient'
 import { GroupAccessPopover } from '@/components/GroupAccessPopover'
 import { useTranslation } from '@/i18n'
@@ -42,6 +43,28 @@ interface ToolItem {
   skillStatus?: string
   /** Skill DB ID (for polling scan status) */
   skillId?: string
+}
+
+interface ScopeOption {
+  id: string
+  name: string
+}
+
+interface InstalledSkillResult {
+  id: string
+  name: string
+  display_name: string
+  description: string | null
+  status: string
+  tags?: string[]
+  metadata?: { installRef?: string }
+}
+
+interface InstalledMcpResult {
+  id: string
+  name: string
+  description: string | null
+  status: string
 }
 
 /* ================================================================== */
@@ -628,7 +651,96 @@ function SecurityReportModal({ skillId, skillName, open, onClose }: { skillId: s
 /* ================================================================== */
 /*  Tool Card                                                          */
 /* ================================================================== */
-function ToolCard({ tool, installing, onInstall }: { tool: ToolItem; installing?: boolean; onInstall?: (tool: ToolItem) => void }) {
+function ScopeAssignmentDialog({
+  tool,
+  scopes,
+  assigning,
+  error,
+  onAssign,
+  onClose,
+}: {
+  tool: ToolItem
+  scopes: ScopeOption[]
+  assigning: boolean
+  error: string | null
+  onAssign: (scopeId: string) => void
+  onClose: () => void
+}) {
+  const [scopeId, setScopeId] = useState(scopes[0]?.id ?? '')
+
+  useEffect(() => {
+    if (!scopeId && scopes[0]) setScopeId(scopes[0].id)
+  }, [scopeId, scopes])
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-gray-900 border border-gray-700 rounded-lg shadow-2xl">
+        <div className="px-5 py-4 border-b border-gray-800 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Add to business scope</h3>
+            <p className="text-xs text-gray-500 mt-1">{tool.name}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="p-1 text-gray-500 hover:text-white"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <label className="block">
+            <span className="text-xs text-gray-400">Business scope</span>
+            <select
+              value={scopeId}
+              onChange={event => setScopeId(event.target.value)}
+              className="mt-1.5 w-full bg-gray-950 border border-gray-700 rounded-md px-3 py-2 text-sm text-white"
+            >
+              {scopes.map(scope => (
+                <option key={scope.id} value={scope.id}>{scope.name}</option>
+              ))}
+            </select>
+          </label>
+          {scopes.length === 0 && (
+            <p className="text-xs text-yellow-400">Create a business scope before assigning tools.</p>
+          )}
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+        <div className="px-5 py-3 border-t border-gray-800 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 text-xs text-gray-400 hover:text-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!scopeId || assigning}
+            onClick={() => onAssign(scopeId)}
+            className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-xs font-medium text-white flex items-center gap-1.5"
+          >
+            {assigning && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Add to scope
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ToolCard({
+  tool,
+  installing,
+  onInstall,
+  onAssign,
+}: {
+  tool: ToolItem
+  installing?: boolean
+  onInstall?: (tool: ToolItem) => void
+  onAssign?: (tool: ToolItem) => void
+}) {
   const { t } = useTranslation()
   const [showReport, setShowReport] = useState(false)
   const Icon = tool.icon
@@ -748,8 +860,17 @@ function ToolCard({ tool, installing, onInstall }: { tool: ToolItem; installing?
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-500/10 text-green-400">
                 {t('tools.installed')}
               </span>
+              {tool.resourceId && (tool.category === 'skills' || tool.category === 'mcp') && (
+                <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); onAssign?.(tool) }}
+                  className="text-[10px] font-medium px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                >
+                  Add to scope
+                </button>
+              )}
             </div>
-          ) : (
+          ) : onInstall ? (
             <button
               onClick={(e) => { e.stopPropagation(); onInstall?.(tool) }}
               disabled={installing}
@@ -761,6 +882,18 @@ function ToolCard({ tool, installing, onInstall }: { tool: ToolItem; installing?
                 <><Download className="w-3 h-3" />{t('tools.install')}</>
               )}
             </button>
+          ) : tool.marketplaceUrl ? (
+            <a
+              href={tool.marketplaceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] font-medium px-2.5 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors flex items-center gap-1"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Setup
+            </a>
+          ) : (
+            <span className="text-[10px] text-gray-600">Not configured</span>
           )}
         </div>
       </div>
@@ -1177,6 +1310,7 @@ function ImportSkillDialog({ open, onClose, onImported }: {
 /* ================================================================== */
 export function Tools() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [category, setCategory] = useState<ToolCategory>('all')
   const [source, setSource] = useState<ToolSource>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -1190,8 +1324,14 @@ export function Tools() {
   const [lastSearchedQuery, setLastSearchedQuery] = useState('')
   const [installingId, setInstallingId] = useState<string | null>(null)
   const [installedSkillNames, setInstalledSkillNames] = useState<Set<string>>(new Set())
+  const [installedSkillTools, setInstalledSkillTools] = useState<ToolItem[]>([])
+  const [installedMcpTools, setInstalledMcpTools] = useState<ToolItem[]>([])
   /** Map of lowercase skill name → { id, status } for status tracking */
   const [skillStatusMap, setSkillStatusMap] = useState<Map<string, { id: string; status: string }>>(new Map())
+  const [scopes, setScopes] = useState<ScopeOption[]>([])
+  const [assignmentTool, setAssignmentTool] = useState<ToolItem | null>(null)
+  const [isAssigning, setIsAssigning] = useState(false)
+  const [assignmentError, setAssignmentError] = useState<string | null>(null)
 
   // Import skill dialog
   const [showImportDialog, setShowImportDialog] = useState(false)
@@ -1201,9 +1341,22 @@ export function Tools() {
   // Load installed skill names and statuses from the org's skill catalog
   const loadInstalledSkillNames = useCallback(async () => {
     try {
-      const res = await restClient.get<{ data: Array<{ id: string; name: string; status: string; metadata?: { installRef?: string } }> }>('/api/skills')
+      const res = await restClient.get<{ data: InstalledSkillResult[] }>('/api/skills')
       const skills = res.data || []
       setInstalledSkillNames(new Set(skills.map(s => s.name.toLowerCase())))
+      setInstalledSkillTools(skills.map(skill => ({
+        id: `skill-db-${skill.id}`,
+        name: skill.display_name || skill.name,
+        description: skill.description || `Installed skill: ${skill.name}`,
+        category: 'skills',
+        source: 'internal',
+        icon: Sparkles,
+        tags: Array.isArray(skill.tags) ? skill.tags : [],
+        installed: skill.status === 'active',
+        resourceId: skill.id,
+        skillId: skill.id,
+        skillStatus: skill.status,
+      })))
       // Key by installRef (unique per author) with fallback to name
       const map = new Map<string, { id: string; status: string }>()
       for (const s of skills) {
@@ -1216,9 +1369,39 @@ export function Tools() {
     } catch { /* ignore */ }
   }, [])
 
+  const loadInstalledMcpServers = useCallback(async () => {
+    try {
+      const res = await restClient.get<{ data: InstalledMcpResult[] }>('/api/mcp/servers?limit=100')
+      setInstalledMcpTools((res.data || []).map(server => ({
+        id: `mcp-db-${server.id}`,
+        name: server.name,
+        description: server.description || 'Configured MCP server',
+        category: 'mcp',
+        source: 'internal',
+        icon: Server,
+        tags: ['mcp', server.status],
+        installed: server.status === 'active',
+        resourceId: server.id,
+      })))
+    } catch {
+      setInstalledMcpTools([])
+    }
+  }, [])
+
+  const loadScopes = useCallback(async () => {
+    try {
+      const res = await restClient.get<{ data: ScopeOption[] }>('/api/business-scopes?limit=100')
+      setScopes(res.data || [])
+    } catch {
+      setScopes([])
+    }
+  }, [])
+
   useEffect(() => {
     loadInstalledSkillNames()
-  }, [loadInstalledSkillNames])
+    loadInstalledMcpServers()
+    loadScopes()
+  }, [loadInstalledSkillNames, loadInstalledMcpServers, loadScopes])
 
   // Poll for scanning skills — refresh every 5s until no more scanning skills
   useEffect(() => {
@@ -1242,15 +1425,44 @@ export function Tools() {
       await restClient.post('/api/skills/marketplace/install', { installRef })
       // Refresh installed skill names so the card shows "Installed"
       await loadInstalledSkillNames()
-      // Also refresh enterprise skills list so it appears in Internal tab
-      await loadEnterpriseSkills()
     } catch (err) {
       console.error('Install failed:', err)
       alert(`Install failed: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
       setInstallingId(null)
     }
-  }, [])
+  }, [loadInstalledSkillNames])
+
+  const openAssignment = useCallback((tool: ToolItem) => {
+    setAssignmentError(null)
+    setAssignmentTool(tool)
+    void loadScopes()
+  }, [loadScopes])
+
+  const handleAssignToScope = useCallback(async (scopeId: string) => {
+    if (!assignmentTool?.resourceId) return
+    setIsAssigning(true)
+    setAssignmentError(null)
+    try {
+      if (assignmentTool.category === 'skills') {
+        await restClient.post(
+          `/api/business-scopes/${scopeId}/skills/${assignmentTool.resourceId}`,
+        )
+      } else if (assignmentTool.category === 'mcp') {
+        await restClient.post(
+          `/api/business-scopes/${scopeId}/mcp-servers`,
+          { mcpServerId: assignmentTool.resourceId },
+        )
+      } else {
+        throw new Error('Only Skills and MCP servers can be assigned to a business scope')
+      }
+      setAssignmentTool(null)
+    } catch (error) {
+      setAssignmentError(error instanceof Error ? error.message : 'Failed to assign tool')
+    } finally {
+      setIsAssigning(false)
+    }
+  }, [assignmentTool])
 
   // Search the skills.sh marketplace API
   const searchMarketplace = useCallback(async (q: string) => {
@@ -1341,10 +1553,21 @@ export function Tools() {
     loadEnterpriseSkills()
   }, [loadEnterpriseSkills])
 
-  // Merge static tools with dynamically loaded marketplace + enterprise skills
-  // Deduplicate enterprise skills against static tools by name
-  const staticNames = new Set(STATIC_TOOLS.map(t => t.name.toLowerCase()))
-  const dedupedEnterprise = enterpriseSkills.filter(t => !staticNames.has(t.name.toLowerCase()))
+  // Prefer real organization assets over static discovery cards with the same name.
+  const installedAssetKeys = new Set(
+    [...installedSkillTools, ...installedMcpTools]
+      .map(tool => `${tool.category}:${tool.name.toLowerCase()}`),
+  )
+  const visibleStaticTools = STATIC_TOOLS.filter(
+    tool => !installedAssetKeys.has(`${tool.category}:${tool.name.toLowerCase()}`),
+  )
+  const dynamicNames = new Set(
+    [...visibleStaticTools, ...installedSkillTools]
+      .map(tool => `${tool.category}:${tool.name.toLowerCase()}`),
+  )
+  const dedupedEnterprise = enterpriseSkills.filter(
+    tool => !dynamicNames.has(`${tool.category}:${tool.name.toLowerCase()}`),
+  )
 
   // Mark marketplace skills as installed if they exist in the org's skill catalog
   const markedMarketplace = marketplaceSkills.map(t => {
@@ -1358,7 +1581,13 @@ export function Tools() {
     }
   })
 
-  const allTools = [...STATIC_TOOLS, ...dedupedEnterprise, ...markedMarketplace]
+  const allTools = [
+    ...installedSkillTools,
+    ...installedMcpTools,
+    ...visibleStaticTools,
+    ...dedupedEnterprise,
+    ...markedMarketplace,
+  ]
 
   // When searching in skills+marketplace mode, use API search results
   // instead of local filtering
@@ -1465,6 +1694,14 @@ export function Tools() {
 
           {/* Import from GitHub / Zip */}
           <button
+            type="button"
+            onClick={() => navigate('/config/mcp')}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 border border-gray-800 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:border-gray-600 transition-colors flex-shrink-0"
+          >
+            <Server className="w-3.5 h-3.5" />
+            Add MCP server
+          </button>
+          <button
             onClick={() => setShowImportDialog(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 border border-gray-800 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:border-gray-600 transition-colors flex-shrink-0"
           >
@@ -1506,7 +1743,14 @@ export function Tools() {
                 <ToolCard
                   tool={tool}
                   installing={installingId === tool.id}
-                  onInstall={tool.source === 'marketplace' && (!tool.installed || tool.skillStatus === 'scan_failed') ? handleInstall : undefined}
+                  onInstall={
+                    tool.category === 'skills'
+                    && tool.source === 'marketplace'
+                    && (!tool.installed || tool.skillStatus === 'scan_failed')
+                      ? handleInstall
+                      : undefined
+                  }
+                  onAssign={openAssignment}
                 />
               </div>
             ))}
@@ -1520,6 +1764,21 @@ export function Tools() {
         onClose={() => setShowImportDialog(false)}
         onImported={() => { loadInstalledSkillNames(); loadEnterpriseSkills() }}
       />
+      {assignmentTool && (
+        <ScopeAssignmentDialog
+          tool={assignmentTool}
+          scopes={scopes}
+          assigning={isAssigning}
+          error={assignmentError}
+          onAssign={handleAssignToScope}
+          onClose={() => {
+            if (!isAssigning) {
+              setAssignmentTool(null)
+              setAssignmentError(null)
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

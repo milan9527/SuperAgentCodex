@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelProviderEntity } from '../../src/repositories/model-provider.repository.js';
-import { getRuntimeCompatibility } from '../../src/services/model-provider.service.js';
+import {
+  getAllowedModelIds,
+  getRuntimeCompatibility,
+} from '../../src/services/model-provider.service.js';
 
 function provider(
   type: 'bedrock' | 'litellm',
@@ -24,9 +27,22 @@ function provider(
 }
 
 describe('model provider runtime compatibility', () => {
+  it('exposes the configured default model when a legacy allowlist is empty', () => {
+    expect(getAllowedModelIds({
+      default_model_id: 'openai.gpt-5.4',
+      allowed_model_ids: [],
+    })).toEqual(['openai.gpt-5.4']);
+  });
+
   it('accepts Bedrock OpenAI Responses models for Codex', () => {
     expect(
       getRuntimeCompatibility(provider('bedrock', 'openai.gpt-5.4'), 'agentcore'),
+    ).toEqual({ compatible: true, reason: null, target: 'agentcore' });
+  });
+
+  it('accepts AWS global inference-profile aliases for GPT 5.6', () => {
+    expect(
+      getRuntimeCompatibility(provider('bedrock', 'global.openai.gpt-5.6-sol'), 'agentcore'),
     ).toEqual({ compatible: true, reason: null, target: 'agentcore' });
   });
 

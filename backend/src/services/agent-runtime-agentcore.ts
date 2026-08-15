@@ -31,6 +31,10 @@ import { createReadStream, statSync, createWriteStream } from 'fs';
 import { readdir, mkdir, rm, lstat } from 'fs/promises';
 import { join, relative, dirname, resolve, sep } from 'path';
 import { pipeline } from 'stream/promises';
+import {
+  isCodexBedrockModelId,
+  normalizeCodexBedrockModelId,
+} from '../utils/bedrock-openai-model.js';
 
 interface AgentCoreEvent {
   type: 'session_start' | 'assistant' | 'result' | 'heartbeat' | 'error';
@@ -367,10 +371,12 @@ export class AgentCoreAgentRuntime implements AgentRuntime {
       agentConfig.resolvedModel?.modelId,
       config.codex.model,
     ];
-    return candidates.find(candidate => (
-      typeof candidate === 'string'
-      && candidate.startsWith('openai.gpt-5')
-    ));
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && isCodexBedrockModelId(candidate)) {
+        return normalizeCodexBedrockModelId(candidate);
+      }
+    }
+    return undefined;
   }
 
   private serializeMcpServers(

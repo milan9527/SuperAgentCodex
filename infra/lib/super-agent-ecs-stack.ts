@@ -275,6 +275,31 @@ export class SuperAgentEcsStack extends cdk.Stack {
       resources: [`arn:aws:bedrock-agentcore:${this.region}:${this.account}:runtime/*`],
     }));
 
+    // Dedicated AgentCore Browser and Code Interpreter tools are also exposed
+    // to the local Claude runtime through the platform-managed MCP bridge.
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'bedrock-agentcore:StartBrowserSession',
+        'bedrock-agentcore:ListBrowserSessions',
+        'bedrock-agentcore:GetBrowserSession',
+        'bedrock-agentcore:StopBrowserSession',
+        'bedrock-agentcore:UpdateBrowserStream',
+        'bedrock-agentcore:ConnectBrowserAutomationStream',
+        'bedrock-agentcore:ConnectBrowserLiveViewStream',
+      ],
+      resources: [`arn:aws:bedrock-agentcore:${this.region}:${this.account}:browser-custom/*`],
+    }));
+    taskRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'bedrock-agentcore:StartCodeInterpreterSession',
+        'bedrock-agentcore:ListCodeInterpreterSessions',
+        'bedrock-agentcore:GetCodeInterpreterSession',
+        'bedrock-agentcore:InvokeCodeInterpreter',
+        'bedrock-agentcore:StopCodeInterpreterSession',
+      ],
+      resources: [`arn:aws:bedrock-agentcore:${this.region}:${this.account}:code-interpreter-custom/*`],
+    }));
+
     // S3 bucket access
     avatarBucket.grantReadWrite(taskRole);
     skillsBucket.grantReadWrite(taskRole);

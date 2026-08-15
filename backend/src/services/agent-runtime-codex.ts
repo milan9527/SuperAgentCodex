@@ -19,6 +19,10 @@ import {
   AgentImageError,
   resolveWorkspaceImage,
 } from './agent-image.js';
+import {
+  isCodexBedrockModelId,
+  normalizeCodexBedrockModelId,
+} from '../utils/bedrock-openai-model.js';
 
 interface ThreadResponse {
   thread: { id: string };
@@ -300,10 +304,12 @@ export class CodexAgentRuntime implements AgentRuntime {
       agentConfig.resolvedModel?.modelId,
       config.codex.model,
     ];
-    return candidates.find(candidate => (
-      typeof candidate === 'string'
-      && (candidate.startsWith('openai.gpt-') || candidate.startsWith('gpt-'))
-    ));
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && isCodexBedrockModelId(candidate)) {
+        return normalizeCodexBedrockModelId(candidate);
+      }
+    }
+    return undefined;
   }
 
   private async buildTurnInput(

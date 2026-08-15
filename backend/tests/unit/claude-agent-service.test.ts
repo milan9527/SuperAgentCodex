@@ -92,7 +92,10 @@ function makeAssistantMsg(content: SDKAssistantMessage['message']['content'], mo
   };
 }
 
-function makeSystemMsg(sessionId: string): SDKSystemMessage {
+function makeSystemMsg(
+  sessionId: string,
+  mcpServers?: SDKSystemMessage['mcp_servers'],
+): SDKSystemMessage {
   return {
     type: 'system',
     subtype: 'init',
@@ -100,6 +103,7 @@ function makeSystemMsg(sessionId: string): SDKSystemMessage {
     uuid: 'uuid-sys',
     model: 'claude-sonnet-4-5-20250929',
     tools: ['Bash', 'Read'],
+    mcp_servers: mcpServers,
     cwd: '/tmp',
   };
 }
@@ -198,6 +202,7 @@ describe('claude-agent.service', () => {
       };
       const opts = service.buildOptions(makeAgentConfig(), '/workspace', [], mcpServers);
       expect(opts.mcpServers).toEqual(mcpServers);
+      expect(opts.allowedTools).toContain('mcp__my-server__*');
     });
 
     it('should not include mcpServers when empty', () => {
@@ -217,7 +222,7 @@ describe('claude-agent.service', () => {
           resolvedModel: {
             provider: 'litellm',
             modelId: 'anthropic/claude-sonnet-4-6',
-            baseUrl: 'https://litellm.example.com',
+            baseUrl: 'https://litellm.example.com/ui/',
             apiKey: 'test-gateway-key',
           },
           subAgents: {
@@ -354,6 +359,52 @@ describe('claude-agent.service', () => {
       expect(events.length).toBeGreaterThanOrEqual(1);
       expect(events[0].type).toBe('session_start');
       expect(events[0].sessionId).toBe('sess-abc');
+    });
+
+    it('should fail explicitly when platform AgentCore tools do not connect', async () => {
+      const messages: SDKMessage[] = [
+        makeSystemMsg('sess-abc', [
+          { name: 'agentcore-tools', status: 'failed' },
+        ]),
+      ];
+
+      const service = new ClaudeAgentService(
+        createMockWorkspaceManager(),
+        createMockQueryFactory(messages),
+      );
+
+      const events: ConversationEvent[] = [];
+      for await (const event of service.runConversation(
+        {
+          agentId: 'agent-001',
+          message: 'Use the browser',
+          organizationId: 'org-001',
+          userId: 'user-001',
+        },
+        makeAgentConfig(),
+        [],
+        undefined,
+        {
+          'agentcore-tools': {
+            type: 'stdio',
+            command: 'uvx',
+            env: {
+              BROWSER_IDENTIFIER: 'dedicated-browser',
+              CODE_INTERPRETER_IDENTIFIER: 'dedicated-code-interpreter',
+            },
+          },
+        },
+      )) {
+        events.push(event);
+      }
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: 'error',
+          status: 'failed',
+          message: 'Platform AgentCore tools failed to connect: failed',
+        }),
+      ]);
     });
 
     it('should yield assistant and result events', async () => {

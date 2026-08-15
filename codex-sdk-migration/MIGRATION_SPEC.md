@@ -280,6 +280,21 @@ Real `us-east-1` ECS deployment audit:
   overwrites any model-supplied `aws.browser.v1` or
   `aws.codeinterpreter.v1` value at `tools/call`. A real Browser session
   returned the dedicated identifier in both tool input and tool result.
+- The same dedicated tools are available to LiteLLM Claude turns executed in
+  the backend ECS task. The Claude adapter adds
+  `mcp__agentcore-tools__*` to its SDK `allowedTools`, rewrites the workspace
+  MCP record to the same policy proxy, and fails the turn explicitly if the
+  SDK reports that the required server did not connect. The backend image
+  uses Debian/glibc rather than Alpine/musl because the AWS Labs MCP package
+  depends on a Playwright ARM64 manylinux wheel. The ECS task role grants the
+  session actions against the actual dedicated resource ARN types,
+  `browser-custom/*` and `code-interpreter-custom/*`.
+- A real `claude-opus-4.7` turn through LiteLLM completed the complete Browser
+  lifecycle against `https://twitter.com`: start, navigate, snapshot,
+  evaluate, and stop. Twitter redirected to `https://x.com/` and returned the
+  unauthenticated login page, which the agent reported accurately rather than
+  claiming access to a signed-in timeline. The dedicated Browser session
+  terminated normally.
 - Chat SSE now coalesces adjacent text-only Codex deltas for at most `60 ms`
   or `32` characters. Tool, result, error, heartbeat, speaker-change, and
   terminal boundaries flush immediately. In a real Chinese response, the
@@ -813,6 +828,13 @@ Chat, IM, Canvas Agent nodes, and V2 Workflow execution resolve the actual
 runtime from the selected request, agent, or scope model. Native provider
 threads are resumed only by their owning runtime; switching runtime uses
 bounded platform-history replay and retains the other runtime's thread fields.
+
+Workspace MCP records are also normalized per invocation. The platform-owned
+`agentcore-tools` server is rewritten to a policy proxy and explicitly added
+to the Claude SDK MCP allowlist. It exposes only Browser and Code Interpreter,
+locks calls to the configured dedicated identifiers, and treats connection
+failure as a turn error. Tenant-defined MCP servers retain their own approval
+and authorization boundaries.
 
 ### 11.5 Model picker
 
@@ -1360,7 +1382,7 @@ Status values used below:
 | AgentCore telemetry | Hand-built Claude instrumentation scope/provider | Codex-specific validated scope or replacement evaluator pipeline | AWS Evaluate acceptance test | BLOCKED |
 | Bedrock models | Arbitrary catalog through direct/proxy routes | Exact Codex-supported OpenAI model IDs only | Startup capability probe | DESIGN |
 | LiteLLM models | Anthropic-compatible remapping | Invocation-level Claude adapter routing with isolated config and canonical Codex workspace | Live catalog, native Claude resume, Claude-to-Codex switch | VALIDATED |
-| AgentCore browser/code interpreter | Injected MCP server | Preserve as Codex MCP server and validate IAM | Tool E2E tests | VALIDATE |
+| AgentCore browser/code interpreter | Injected MCP server | Share a constrained dedicated-resource proxy across Codex/AgentCore and LiteLLM Claude runtimes | Codex and Claude Browser/Code Interpreter E2E tests | VALIDATED |
 | Memory/documents/apps | Workspace conventions and prompts | Same business behavior through layout abstraction | Domain E2E suite | DESIGN |
 | Carry-forward | Reads Claude paths and formats | Read selected runtime layout; parse TOML agents/config/hooks | Round-trip and conflict tests | DESIGN |
 
@@ -1860,11 +1882,11 @@ Audit status on 2026-08-14:
 | Gate | Status | Evidence / remaining condition |
 | --- | --- | --- |
 | A: Protocol | GREEN | Pinned schema, unknown/server-request handling, start/resume/interrupt/recovery, ownership, and terminal uniqueness passed. |
-| B: User-visible chat | GREEN | Text, coalesced streaming deltas, tools, errors, stop, persistence, images, mention/subagent, and real browser validation passed. |
+| B: User-visible chat | GREEN | Text, coalesced streaming deltas, tools, errors, stop, persistence, images, mention/subagent, Codex Browser, and LiteLLM Claude Browser validation passed. |
 | C: Workspaces | GREEN | Codex-only layout, migration, carry-forward round-trip, MCP/hooks/skills/agents, sync, and explicit unsupported plugin status passed. |
 | D: Non-chat consumers | CONDITIONAL | Workflow, scope, twin, skill scan, node execution, and IM contracts passed. External Slack delivery awaits valid credentials for the existing test fixtures. No enabled A2A peer exists. |
 | E: Security | GREEN | Sandbox, network, path/symlink, approval, secret, synchronization, and warm-container isolation tests passed locally and on Runtime C. |
-| F: AgentCore | GREEN WITH EXCLUSION | Model/Region, dedicated Browser/Code Interpreter enforcement, cancellation, S3/diff/carry-forward ordering passed. AWS Evaluate remains excluded from the launch SLO until separately validated. |
+| F: AgentCore | GREEN WITH EXCLUSION | Model/Region, dedicated Browser/Code Interpreter enforcement for both Codex and LiteLLM Claude, cancellation, S3/diff/carry-forward ordering passed. AWS Evaluate remains excluded from the launch SLO until separately validated. |
 | G: Rollout | DEPLOYED / OPEN | A new isolated `us-east-1` ECS stack and create-only AgentCore Runtime passed direct and full-platform E2E. Production shadow comparison, canary observation, SLO acceptance, hardening decisions, and rollback exercise remain required. |
 
 ### Gate A: Protocol

@@ -92,6 +92,28 @@ test('narrows identifier schemas in tools/list responses', () => {
   );
 });
 
+test('advertises only Browser and Code Interpreter tools', () => {
+  const result = constrainAgentcoreToolList({
+    jsonrpc: '2.0',
+    id: 5,
+    result: {
+      tools: [
+        { name: 'browser_navigate', inputSchema: { type: 'object', properties: {} } },
+        { name: 'execute_code', inputSchema: { type: 'object', properties: {} } },
+        { name: 'create_agent_runtime', inputSchema: { type: 'object', properties: {} } },
+        { name: 'create_gateway', inputSchema: { type: 'object', properties: {} } },
+      ],
+    },
+  }, identifiers) as {
+    result: { tools: Array<{ name: string }> };
+  };
+
+  assert.deepEqual(
+    result.result.tools.map(tool => tool.name),
+    ['browser_navigate', 'execute_code'],
+  );
+});
+
 test('leaves unrelated MCP calls unchanged', () => {
   const request = {
     jsonrpc: '2.0',

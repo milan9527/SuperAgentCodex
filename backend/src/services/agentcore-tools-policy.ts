@@ -25,11 +25,7 @@ const CODE_INTERPRETER_TOOLS = new Set([
   'list_files',
 ]);
 
-/**
- * Force platform-managed AgentCore resources at the MCP boundary. Environment
- * defaults alone are insufficient because a model can explicitly pass the
- * shared aws.browser.v1/aws.codeinterpreter.v1 identifiers.
- */
+/** Force platform-managed AgentCore resource identifiers at the MCP boundary. */
 export function constrainAgentcoreToolRequest(
   message: unknown,
   identifiers: AgentcoreToolIdentifiers,

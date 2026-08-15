@@ -1518,6 +1518,18 @@ export const translations: TranslationData = {
     en: 'Configure which LLMs power your agents — Amazon Bedrock or a LiteLLM-compatible gateway. Agents and scopes reference these providers.',
     cn: '配置驱动智能体的大模型来源——Amazon Bedrock 或兼容 LiteLLM 的网关。智能体和业务域会引用这些来源。'
   },
+  'models.chatVisibilityHint': {
+    en: 'Enabled, compatible providers and their allowed models appear in Chat the next time the model menu opens.',
+    cn: '已启用且兼容的来源及其允许模型，会在下次打开聊天模型菜单时显示。'
+  },
+  'models.visibleInChat': {
+    en: 'Visible in Chat',
+    cn: '聊天可见'
+  },
+  'models.hiddenFromChat': {
+    en: 'Hidden from Chat',
+    cn: '聊天隐藏'
+  },
   'models.add': {
     en: 'Add Provider',
     cn: '添加来源'
@@ -1545,6 +1557,10 @@ export const translations: TranslationData = {
   'models.baseUrl': {
     en: 'Base URL',
     cn: '接口地址 (Base URL)'
+  },
+  'models.baseUrlHint': {
+    en: 'Use the LiteLLM proxy root, for example https://litellm.example.com. Do not use the /ui URL.',
+    cn: '填写 LiteLLM 代理根地址，例如 https://litellm.example.com；不要填写 /ui 管理界面地址。'
   },
   'models.apiKey': {
     en: 'API Key',

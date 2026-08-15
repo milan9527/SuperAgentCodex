@@ -6,7 +6,12 @@
  */
 
 import { agentRuntime } from './agent-runtime-factory.js';
-import type { AgentConfig, ConversationEvent } from './agent-runtime.js';
+import type { AgentConfig, AgentRuntime, ConversationEvent } from './agent-runtime.js';
+import {
+  extractSelection,
+  resolveModel,
+  type ResolvedModel,
+} from './model-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,6 +43,18 @@ export interface GeneratedWorkflowPlan {
   tasks: GeneratedWorkflowTask[];
   variables?: GeneratedWorkflowVariable[];
 }
+
+export interface WorkflowModelContext {
+  organizationId: string;
+  scopeSettings?: unknown;
+}
+
+type WorkflowModelResolver = (
+  organizationId: string,
+  input: {
+    scopeSelection?: ReturnType<typeof extractSelection>;
+  },
+) => Promise<ResolvedModel>;
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -245,6 +262,39 @@ function fixUnescapedControlChars(json: string): string {
 }
 
 export class WorkflowGeneratorService {
+  private readonly runtime: AgentRuntime;
+  private readonly modelResolver: WorkflowModelResolver;
+
+  constructor(dependencies: {
+    runtime?: AgentRuntime;
+    modelResolver?: WorkflowModelResolver;
+  } = {}) {
+    this.runtime = dependencies.runtime ?? agentRuntime;
+    this.modelResolver = dependencies.modelResolver ?? resolveModel;
+  }
+
+  private async buildAgentConfig(
+    id: 'workflow-generator' | 'workflow-patcher',
+    displayName: string,
+    systemPrompt: string,
+    context: WorkflowModelContext,
+  ): Promise<AgentConfig> {
+    const resolvedModel = await this.modelResolver(context.organizationId, {
+      scopeSelection: extractSelection(context.scopeSettings),
+    });
+    return {
+      id,
+      name: id,
+      displayName,
+      organizationId: context.organizationId,
+      systemPrompt,
+      model: resolvedModel.modelId,
+      resolvedModel,
+      skillIds: [],
+      mcpServerIds: [],
+    };
+  }
+
   /**
    * Generate a workflow plan by streaming Claude's response.
    * Yields ConversationEvents that can be forwarded as SSE.
@@ -252,18 +302,16 @@ export class WorkflowGeneratorService {
    */
   async *generate(
     description: string,
+    context: WorkflowModelContext,
     availableAgents?: Array<{ id: string; name: string; role: string; skills?: string[] }>,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
   ): AsyncGenerator<ConversationEvent> {
-    const agentConfig: AgentConfig = {
-      id: 'workflow-generator',
-      name: 'workflow-generator',
-      displayName: 'Workflow Generator',
-      organizationId: 'system',
-      systemPrompt: WORKFLOW_GENERATOR_SYSTEM_PROMPT,
-      skillIds: [],
-      mcpServerIds: [],
-    };
+    const agentConfig = await this.buildAgentConfig(
+      'workflow-generator',
+      'Workflow Generator',
+      WORKFLOW_GENERATOR_SYSTEM_PROMPT,
+      context,
+    );
 
     let message = description;
 
@@ -309,12 +357,12 @@ export class WorkflowGeneratorService {
       message = `Here is our conversation so far:\n\n${conversationParts.join('\n\n')}\n\nPlease continue based on the latest message. If you now have enough information, generate the workflow JSON. Otherwise, ask follow-up questions.`;
     }
 
-    yield* agentRuntime.runConversation(
+    yield* this.runtime.runConversation(
       {
         agentId: 'workflow-generator',
         message,
-        organizationId: 'system',
-        userId: 'system',
+        organizationId: context.organizationId,
+        userId: 'workflow-system',
       },
       agentConfig,
       [], // no skills needed for generation
@@ -329,17 +377,15 @@ export class WorkflowGeneratorService {
   async *generatePatches(
     currentPlan: { title: string; tasks: unknown[]; variables?: unknown[] },
     modificationRequest: string,
+    context: WorkflowModelContext,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
   ): AsyncGenerator<ConversationEvent> {
-    const agentConfig: AgentConfig = {
-      id: 'workflow-patcher',
-      name: 'workflow-patcher',
-      displayName: 'Workflow Patcher',
-      organizationId: 'system',
-      systemPrompt: WORKFLOW_PATCH_SYSTEM_PROMPT,
-      skillIds: [],
-      mcpServerIds: [],
-    };
+    const agentConfig = await this.buildAgentConfig(
+      'workflow-patcher',
+      'Workflow Patcher',
+      WORKFLOW_PATCH_SYSTEM_PROMPT,
+      context,
+    );
 
     let message: string;
 
@@ -354,12 +400,12 @@ export class WorkflowGeneratorService {
       message = `Current workflow:\n${JSON.stringify(currentPlan, null, 2)}\n\nModification request: ${modificationRequest}`;
     }
 
-    yield* agentRuntime.runConversation(
+    yield* this.runtime.runConversation(
       {
         agentId: 'workflow-patcher',
         message,
-        organizationId: 'system',
-        userId: 'system',
+        organizationId: context.organizationId,
+        userId: 'workflow-system',
       },
       agentConfig,
       [],

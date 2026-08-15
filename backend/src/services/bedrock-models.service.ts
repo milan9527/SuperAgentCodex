@@ -13,6 +13,10 @@ import {
   ListFoundationModelsCommand,
 } from '@aws-sdk/client-bedrock';
 import { config } from '../config/index.js';
+import {
+  isCodexBedrockModelId,
+  normalizeCodexBedrockModelId,
+} from '../utils/bedrock-openai-model.js';
 
 export interface BedrockModel {
   /** The id to pass as the model (inference profile id or foundation model id). */
@@ -58,7 +62,14 @@ export async function listBedrockModels(force = false): Promise<BedrockModel[]> 
     for (const p of profiles.inferenceProfileSummaries ?? []) {
       const id = p.inferenceProfileId;
       if (!id) continue;
-      byId.set(id, { id, name: p.inferenceProfileName || id, provider: providerOf(id) });
+      const selectableId = isCodexBedrockModelId(id)
+        ? normalizeCodexBedrockModelId(id)!
+        : id;
+      byId.set(selectableId, {
+        id: selectableId,
+        name: p.inferenceProfileName || selectableId,
+        provider: providerOf(id),
+      });
     }
   } catch (err) {
     console.warn('[bedrock-models] ListInferenceProfiles failed:', err instanceof Error ? err.message : err);
@@ -72,8 +83,15 @@ export async function listBedrockModels(force = false): Promise<BedrockModel[]> 
       if (!id) continue;
       const onDemand = (m.inferenceTypesSupported ?? []).includes('ON_DEMAND');
       if (!onDemand) continue; // profile-only models are already listed above
-      if (!byId.has(id)) {
-        byId.set(id, { id, name: m.modelName || id, provider: m.providerName || providerOf(id) });
+      const selectableId = isCodexBedrockModelId(id)
+        ? normalizeCodexBedrockModelId(id)!
+        : id;
+      if (!byId.has(selectableId)) {
+        byId.set(selectableId, {
+          id: selectableId,
+          name: m.modelName || selectableId,
+          provider: m.providerName || providerOf(id),
+        });
       }
     }
   } catch (err) {

@@ -8,12 +8,14 @@
 # Stage 1: Dependencies
 # Install all dependencies including devDependencies for building
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS deps
+FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 
 # Install OpenSSL for Prisma
-RUN apk add --no-cache openssl
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package.json package-lock.json ./
@@ -25,12 +27,14 @@ RUN npm ci
 # Stage 2: Builder
 # Build the TypeScript application and generate Prisma client
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
 # Install OpenSSL for Prisma
-RUN apk add --no-cache openssl
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
@@ -61,16 +65,28 @@ RUN npm run build
 # Stage 3: Production
 # Minimal production image with only runtime dependencies
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS production
+FROM node:20-bookworm-slim AS production
 
 WORKDIR /app
 
-# Install OpenSSL for Prisma and curl for health checks
-RUN apk add --no-cache openssl curl
+# Install OpenSSL for Prisma, curl for health checks, and the pinned uvx
+# launcher used by the AgentCore Browser/Code Interpreter MCP bridge.
+# Debian/glibc is required because the MCP package depends on Playwright's
+# manylinux ARM64 wheel, which is not published for Alpine/musl.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      curl \
+      openssl \
+      python3 \
+      python3-pip && \
+    pip3 install --break-system-packages --no-cache-dir uv==0.9.17 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 backend
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs \
+      --create-home --home-dir /home/backend --shell /usr/sbin/nologin backend
 
 # Copy package files
 COPY package.json package-lock.json ./

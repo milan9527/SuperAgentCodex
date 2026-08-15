@@ -45,6 +45,21 @@ interface ExecutionNodeStep {
 
 type IntermediateStep = ToolUseStep | ToolResultStep | ExecutionLogStep | ExecutionNodeStep
 
+export function mergeExecutionLogStep(
+  steps: IntermediateStep[],
+  content: string,
+): IntermediateStep[] {
+  if (!content) return steps
+  const last = steps.at(-1)
+  if (last?.type === 'execution_log') {
+    return [
+      ...steps.slice(0, -1),
+      { ...last, content: `${last.content}${content}` },
+    ]
+  }
+  return [...steps, { type: 'execution_log', content }]
+}
+
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -381,6 +396,10 @@ export const WorkflowCopilot = forwardRef<WorkflowCopilotHandle, WorkflowCopilot
   const [isProcessing, setIsProcessing] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const executionLogBuffersRef = useRef(new Map<string, {
+    content: string
+    timer: ReturnType<typeof setTimeout> | null
+  }>())
   const { t } = useTranslation()
 
   const hasNodes = canvasData && canvasData.nodes.length > 0
@@ -405,6 +424,40 @@ export const WorkflowCopilot = forwardRef<WorkflowCopilotHandle, WorkflowCopilot
     setMessages(prev => prev.map(m => m.id === id ? { ...m, steps: [...m.steps, step] } : m))
   }, [])
 
+  const flushExecutionLog = useCallback((id: string) => {
+    const entry = executionLogBuffersRef.current.get(id)
+    if (!entry?.content) return
+    if (entry.timer) clearTimeout(entry.timer)
+    executionLogBuffersRef.current.delete(id)
+    const content = entry.content
+    setMessages(prev => prev.map(message => (
+      message.id === id
+        ? { ...message, steps: mergeExecutionLogStep(message.steps, content) }
+        : message
+    )))
+  }, [])
+
+  const queueExecutionLog = useCallback((id: string, content: string) => {
+    if (!content) return
+    const existing = executionLogBuffersRef.current.get(id)
+    const entry = existing ?? { content: '', timer: null }
+    entry.content += content
+    if (entry.timer) clearTimeout(entry.timer)
+    executionLogBuffersRef.current.set(id, entry)
+    if (entry.content.length >= 32) {
+      flushExecutionLog(id)
+      return
+    }
+    entry.timer = setTimeout(() => flushExecutionLog(id), 60)
+  }, [flushExecutionLog])
+
+  useEffect(() => () => {
+    for (const entry of executionLogBuffersRef.current.values()) {
+      if (entry.timer) clearTimeout(entry.timer)
+    }
+    executionLogBuffersRef.current.clear()
+  }, [])
+
   // Expose execution methods via ref so the Run button can push events
   useImperativeHandle(ref, () => ({
     startExecution() {
@@ -417,8 +470,12 @@ export const WorkflowCopilot = forwardRef<WorkflowCopilotHandle, WorkflowCopilot
     },
     pushExecutionEvent(msgId, event) {
       if (event.type === 'log' && event.content) {
-        appendStep(msgId, { type: 'execution_log', content: String(event.content) })
-      } else if (event.type === 'step_start' && event.taskId) {
+        queueExecutionLog(msgId, String(event.content))
+        return
+      }
+
+      flushExecutionLog(msgId)
+      if (event.type === 'step_start' && event.taskId) {
         const taskId = event.taskId
         // Only add a new step if this taskId doesn't already have one
         setMessages(prev => prev.map(m => {
@@ -462,6 +519,7 @@ export const WorkflowCopilot = forwardRef<WorkflowCopilotHandle, WorkflowCopilot
       }
     },
     finishExecution(msgId, success, message) {
+      flushExecutionLog(msgId)
       // Build a summary from the steps
       setMessages(prev => {
         const msg = prev.find(m => m.id === msgId)
@@ -477,7 +535,7 @@ export const WorkflowCopilot = forwardRef<WorkflowCopilotHandle, WorkflowCopilot
         return prev.map(m => m.id === msgId ? { ...m, content: summary, status: success ? 'done' : 'error' } : m)
       })
     },
-  }), [createMessage, updateMessage, appendStep])
+  }), [createMessage, updateMessage, queueExecutionLog, flushExecutionLog, t])
 
   const handleSubmit = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault()

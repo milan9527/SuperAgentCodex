@@ -37,7 +37,10 @@ import { BusinessScopeService, type BusinessScope } from '@/services/businessSco
 import { RestChatRoomService } from '@/services/api/restChatRoomService'
 import { RestChatService } from '@/services/api/restChatService'
 import type { QuickQuestion, Agent, ModelProvider } from '@/types'
-import { modelProviderService } from '@/services/modelProviderService'
+import {
+  MODEL_PROVIDERS_CHANGED_EVENT,
+  modelProviderService,
+} from '@/services/modelProviderService'
 import { loadRuntimeModelGroups } from '@/services/runtimeModelCompatibility'
 import { getAvatarDisplayUrl, getAvatarFallback, shouldShowAvatarImage } from '@/utils/avatarUtils'
 import { restClient } from '@/services/api/restClient'
@@ -1376,6 +1379,7 @@ function MessageInput({ onSend, onStop, onUpload, sessionId, businessScopeId, di
   const [showModelPicker, setShowModelPicker] = useState(false)
   const [modelGroups, setModelGroups] = useState<Array<{ provider: ModelProvider; models: Array<{ id: string; litellm_model: string; provider: string }> }>>([])
   const [modelsLoading, setModelsLoading] = useState(false)
+  const [modelGroupsRevision, setModelGroupsRevision] = useState(0)
   const modelPickerRef = useRef<HTMLDivElement>(null)
 
   // File autocomplete state
@@ -1401,9 +1405,20 @@ function MessageInput({ onSend, onStop, onUpload, sessionId, businessScopeId, di
       .catch(() => setAllFiles([]))
   }, [sessionId])
 
-  // Chat only consumes models explicitly enabled in Admin Settings.
+  // Provider mutations may happen in Settings while Chat remains mounted.
+  // Invalidate the local list so an open picker refreshes immediately.
   useEffect(() => {
-    if (!showModelPicker || modelGroups.length > 0) return
+    const handleProvidersChanged = () => {
+      setModelGroupsRevision(revision => revision + 1)
+    }
+    window.addEventListener(MODEL_PROVIDERS_CHANGED_EVENT, handleProvidersChanged)
+    return () => window.removeEventListener(MODEL_PROVIDERS_CHANGED_EVENT, handleProvidersChanged)
+  }, [])
+
+  // Chat only consumes models explicitly enabled in Admin Settings. Refresh on
+  // every open so changes made in another route or browser tab are visible.
+  useEffect(() => {
+    if (!showModelPicker) return
     let cancelled = false
     setModelsLoading(true)
     ;(async () => {
@@ -1417,7 +1432,7 @@ function MessageInput({ onSend, onStop, onUpload, sessionId, businessScopeId, di
       }
     })()
     return () => { cancelled = true }
-  }, [showModelPicker, modelGroups.length])
+  }, [showModelPicker, modelGroupsRevision])
 
   // Close model picker on click outside
   useEffect(() => {

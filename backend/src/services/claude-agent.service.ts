@@ -15,6 +15,7 @@ import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { getBedrockModelId } from '../utils/claude-config.js';
+import { normalizeLiteLLMBaseUrl } from '../utils/litellm-base-url.js';
 import { createToken } from '../middleware/auth.js';
 import { dangerousCommandBlocker, binaryFileReadBlocker, createSkillAccessChecker } from './claude-hooks.js';
 import { WorkspaceManager, type SkillForWorkspace } from './workspace-manager.js';
@@ -32,6 +33,7 @@ import {
   AgentImageError,
   resolveWorkspaceImage,
 } from './agent-image.js';
+import { renderClaudeMcpServers } from './claude-mcp-servers.js';
 
 export type {
   AgentConfig,
@@ -119,6 +121,10 @@ export interface SDKSystemMessage {
   uuid: string;
   model?: string;
   tools?: string[];
+  mcp_servers?: Array<{
+    name: string;
+    status: string;
+  }>;
   cwd?: string;
   [key: string]: unknown;
 }
@@ -359,6 +365,19 @@ export class ClaudeAgentService {
             sessionId = sysMsg.session_id;
             this.abortControllers.set(sessionId, abortController);
             this.lastActivity.set(sessionId, Date.now());
+            const mcpStatuses = sysMsg.mcp_servers ?? [];
+            if (mcpStatuses.length > 0) {
+              console.log(
+                '[claude-mcp] Server status:',
+                mcpStatuses.map(server => `${server.name}=${server.status}`).join(', '),
+              );
+            }
+            const agentcoreTools = mcpStatuses.find(server => server.name === 'agentcore-tools');
+            if (agentcoreTools && agentcoreTools.status !== 'connected') {
+              throw new Error(
+                `Platform AgentCore tools failed to connect: ${agentcoreTools.status}`,
+              );
+            }
             yield {
               type: 'session_start',
               provider: 'claude',
@@ -465,16 +484,21 @@ export class ClaudeAgentService {
         },
       ]),
     );
+    const renderedMcpServers = renderClaudeMcpServers(mcpServers);
+    const allowedMcpTools = Object.keys(renderedMcpServers)
+      .map(name => `mcp__${name}__*`);
 
     const options: ClaudeCodeOptions = {
       systemPrompt,
-      allowedTools: DEFAULT_ALLOWED_TOOLS,
+      allowedTools: [...DEFAULT_ALLOWED_TOOLS, ...allowedMcpTools],
       cwd: workspacePath,
       model,
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       hooks: { PreToolUse: preToolUseHooks },
-      mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+      mcpServers: Object.keys(renderedMcpServers).length > 0
+        ? renderedMcpServers
+        : undefined,
       // Only load host user settings for plain Anthropic auth. Bedrock and
       // LiteLLM must not inherit stored OAuth or project-level Claude layout.
       // The canonical project layout is Codex-native. Project instructions,
@@ -522,10 +546,13 @@ export class ClaudeAgentService {
       // may reject. So we drive the CLI with the `opus` alias but remap that
       // alias to the gateway's actual model id via ANTHROPIC_DEFAULT_OPUS_MODEL.
       const gatewayModel = resolved?.modelId;
+      const gatewayBaseUrl = resolved?.baseUrl
+        ? normalizeLiteLLMBaseUrl(resolved.baseUrl)
+        : undefined;
       options.env = {
         ...process.env,
         ...platformEnv,
-        ...(resolved?.baseUrl ? { ANTHROPIC_BASE_URL: resolved.baseUrl } : {}),
+        ...(gatewayBaseUrl ? { ANTHROPIC_BASE_URL: gatewayBaseUrl } : {}),
         // Gateway auth: set BOTH so the CLI uses the token regardless of which
         // header it prefers, and does not fall back to stored OAuth creds.
         ...(resolved?.apiKey ? { ANTHROPIC_AUTH_TOKEN: resolved.apiKey, ANTHROPIC_API_KEY: resolved.apiKey } : {}),

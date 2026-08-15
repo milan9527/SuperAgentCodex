@@ -11,6 +11,8 @@ import { AppError } from '../middleware/errorHandler.js';
 import type { CreateModelProviderInput, UpdateModelProviderInput } from '../schemas/model-provider.schema.js';
 import { config } from '../config/index.js';
 import { isCodexBedrockModel } from './model-resolver.js';
+import { normalizeLiteLLMBaseUrl } from '../utils/litellm-base-url.js';
+import { normalizeCodexBedrockModelId } from '../utils/bedrock-openai-model.js';
 
 /** Safe (api-facing) view of a provider — never includes the api_key. */
 export interface SafeModelProvider {
@@ -108,6 +110,17 @@ function normalizeAllowedModelIds(modelIds: string[] | undefined): string[] {
   return [...new Set((modelIds ?? []).map(modelId => modelId.trim()).filter(Boolean))];
 }
 
+function normalizeProviderModelId(type: string, modelId: string | null): string | null {
+  if (!modelId || type !== 'bedrock') return modelId;
+  return normalizeCodexBedrockModelId(modelId) ?? null;
+}
+
+function normalizeProviderModelIds(type: string, modelIds: string[] | undefined): string[] {
+  return [...new Set(normalizeAllowedModelIds(modelIds).map(modelId => (
+    normalizeProviderModelId(type, modelId) ?? modelId
+  )))];
+}
+
 function validateDefaultModel(defaultModelId: string | null, allowedModelIds: string[]): void {
   if (defaultModelId && !allowedModelIds.includes(defaultModelId)) {
     throw AppError.validation('The default model must be included in the allowed model list');
@@ -162,8 +175,12 @@ export class ModelProviderService {
       await modelProviderRepository.clearOrgDefault(organizationId);
     }
 
-    const defaultModelId = input.default_model_id?.trim() || null;
-    const allowedModelIds = normalizeAllowedModelIds(
+    const defaultModelId = normalizeProviderModelId(
+      input.type,
+      input.default_model_id?.trim() || null,
+    );
+    const allowedModelIds = normalizeProviderModelIds(
+      input.type,
       input.allowed_model_ids ?? (defaultModelId ? [defaultModelId] : []),
     );
     validateDefaultModel(defaultModelId, allowedModelIds);
@@ -182,7 +199,10 @@ export class ModelProviderService {
       organization_id: organizationId,
       name: input.name,
       type: input.type,
-      base_url: input.base_url ?? null,
+      base_url:
+        input.type === 'litellm' && input.base_url
+          ? normalizeLiteLLMBaseUrl(input.base_url)
+          : null,
       credential_id: credentialId,
       default_model_id: defaultModelId,
       allowed_model_ids: allowedModelIds,
@@ -204,14 +224,21 @@ export class ModelProviderService {
 
     const data: Partial<ModelProviderEntity> = {};
     if (input.name !== undefined) data.name = input.name;
-    if (input.base_url !== undefined) data.base_url = input.base_url ?? null;
+    if (input.base_url !== undefined) {
+      if (existing.type === 'litellm' && !input.base_url) {
+        throw AppError.validation('base_url is required for litellm providers');
+      }
+      data.base_url = input.base_url
+        ? normalizeLiteLLMBaseUrl(input.base_url)
+        : null;
+    }
     const effectiveDefaultModelId =
       input.default_model_id !== undefined
-        ? input.default_model_id?.trim() || null
+        ? normalizeProviderModelId(existing.type, input.default_model_id?.trim() || null)
         : existing.default_model_id;
     let effectiveAllowedModelIds =
       input.allowed_model_ids !== undefined
-        ? normalizeAllowedModelIds(input.allowed_model_ids)
+        ? normalizeProviderModelIds(existing.type, input.allowed_model_ids)
         : getAllowedModelIds(existing);
     if (
       input.default_model_id !== undefined &&

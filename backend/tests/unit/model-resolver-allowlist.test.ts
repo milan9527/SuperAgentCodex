@@ -26,7 +26,7 @@ const litellmProvider = {
   organization_id: 'org-1',
   name: 'Approved LiteLLM',
   type: 'litellm',
-  base_url: 'https://litellm.example.com',
+  base_url: 'https://litellm.example.com/ui/',
   credential_id: 'credential-1',
   default_model_id: 'claude-sonnet-4.6',
   allowed_model_ids: ['claude-sonnet-4.6', 'claude-haiku-4.5'],
@@ -77,6 +77,30 @@ describe('model resolver allowlist', () => {
     })).resolves.toMatchObject({
       provider: 'litellm',
       modelId: 'claude-sonnet-4.6',
+    });
+  });
+
+  it('converts an AWS inference-profile alias to the canonical Codex model id', async () => {
+    const bedrockProvider = {
+      ...litellmProvider,
+      id: 'bedrock-provider',
+      name: 'Bedrock GPT 5.6',
+      type: 'bedrock',
+      base_url: null,
+      credential_id: null,
+      default_model_id: 'openai.gpt-5.6-sol',
+      allowed_model_ids: ['openai.gpt-5.6-sol'],
+    };
+    mocks.findById.mockResolvedValue(bedrockProvider);
+
+    await expect(resolveModel('org-1', {
+      requestSelection: {
+        providerId: 'bedrock-provider',
+        modelId: 'global.openai.gpt-5.6-sol',
+      },
+    })).resolves.toEqual({
+      provider: 'bedrock',
+      modelId: 'openai.gpt-5.6-sol',
     });
   });
 });

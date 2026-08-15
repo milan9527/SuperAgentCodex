@@ -9,6 +9,7 @@ import { workflowService, type GeneratedWorkflowPlan, type WorkflowPatch } from 
 import { workflowGeneratorService } from '../services/workflow-generator.service.js';
 import { workflowExecutorV2, type WorkflowV2Plan, type WorkflowProgressEvent } from '../services/workflow-executor-v2.js';
 import { agentService } from '../services/agent.service.js';
+import { businessScopeService } from '../services/businessScope.service.js';
 import { authenticate, requireModifyAccess } from '../middleware/auth.js';
 import type { ConversationEvent } from '../services/claude-agent.service.js';
 import {
@@ -101,6 +102,18 @@ function formatSSEEvent(payload: { event?: string; data: string }): string {
   if (payload.event) result += `event: ${payload.event}\n`;
   result += `data: ${payload.data}\n\n`;
   return result;
+}
+
+async function getWorkflowModelContext(
+  organizationId: string,
+  businessScopeId?: string | null,
+): Promise<{ organizationId: string; scopeSettings?: unknown }> {
+  if (!businessScopeId) return { organizationId };
+  const scope = await businessScopeService.getBusinessScopeById(businessScopeId, organizationId);
+  return {
+    organizationId,
+    scopeSettings: scope.settings,
+  };
 }
 
 /**
@@ -632,8 +645,13 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
       }, 15_000);
 
       try {
+        const modelContext = await getWorkflowModelContext(
+          request.user!.orgId,
+          businessScopeId,
+        );
         const generator = workflowGeneratorService.generate(
           description.trim(),
+          modelContext,
           scopeAgents,
           history,
         );
@@ -772,9 +790,14 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
       }, 15_000);
 
       try {
+        const modelContext = await getWorkflowModelContext(
+          request.user!.orgId,
+          workflow.business_scope_id,
+        );
         const generator = workflowGeneratorService.generatePatches(
           currentPlan,
           instruction.trim(),
+          modelContext,
         );
         const assistantTextBlocks: string[] = [];
 
@@ -926,6 +949,7 @@ export async function workflowRoutes(fastify: FastifyInstance): Promise<void> {
         const generator = workflowGeneratorService.generatePatches(
           currentPlan,
           modificationRequest.trim(),
+          { organizationId: request.user!.orgId },
           history,
         );
         const assistantTextBlocks: string[] = [];

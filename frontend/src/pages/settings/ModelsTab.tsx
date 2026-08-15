@@ -235,7 +235,8 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
           </button>
         )}
       </div>
-      <p className="text-sm text-gray-400 mb-6">{t('models.subtitle')}</p>
+      <p className="text-sm text-gray-400">{t('models.subtitle')}</p>
+      <p className="text-xs text-gray-500 mb-6 mt-1">{t('models.chatVisibilityHint')}</p>
 
       {error && (
         <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
@@ -286,6 +287,9 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
                   className="mt-1 w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white text-sm"
                   placeholder="https://litellm.example.com"
                 />
+                <span className="mt-1 block text-[11px] leading-4 text-gray-500">
+                  {t('models.baseUrlHint')}
+                </span>
               </label>
               <label className="block text-xs text-gray-400">
                 {t('models.apiKey')}
@@ -432,6 +436,17 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
                         {t('models.default')}
                       </span>
                     )}
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                        p.enabled && p.runtimeCompatible !== false
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : 'bg-amber-500/15 text-amber-300'
+                      }`}
+                    >
+                      {p.enabled && p.runtimeCompatible !== false
+                        ? t('models.visibleInChat')
+                        : t('models.hiddenFromChat')}
+                    </span>
                   </div>
                   <div className="text-xs text-gray-500 truncate">
                     {p.type === 'litellm' ? p.baseUrl : 'Amazon Bedrock'}
@@ -439,6 +454,11 @@ export function ModelsTab({ isAdmin }: ModelsTabProps) {
                     {` · ${p.allowedModelIds.length} ${t('models.allowedCount')}`}
                     {p.type === 'litellm' && p.hasApiKey ? ' · 🔑' : ''}
                   </div>
+                  {p.enabled && p.runtimeCompatible === false && p.runtimeCompatibilityReason && (
+                    <div className="mt-1 text-[11px] text-amber-400">
+                      {p.runtimeCompatibilityReason}
+                    </div>
+                  )}
                 </div>
               </div>
               {isAdmin && (

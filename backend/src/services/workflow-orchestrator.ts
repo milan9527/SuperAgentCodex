@@ -24,6 +24,7 @@ import { businessScopeService } from './businessScope.service.js';
 import { skillService } from './skill.service.js';
 import { agentRepository } from '../repositories/agent.repository.js';
 import { skillRepository } from '../repositories/skill.repository.js';
+import { extractSelection, resolveModel } from './model-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -792,6 +793,7 @@ export class WorkflowOrchestrator {
       name: scope.name,
       description: scope.description,
       systemPrompt: scope.system_prompt,
+      settings: scope.settings as Record<string, unknown> | null,
       configVersion: scope.config_version ?? 1,
       agents: agents.map(a => ({
         id: a.id,
@@ -810,12 +812,17 @@ export class WorkflowOrchestrator {
       organizationId, sessionId, scopeForWorkspace, null,
     );
 
+    const resolvedModel = await resolveModel(organizationId, {
+      scopeSelection: extractSelection(scope.settings),
+    });
     const agentConfig: AgentConfig = {
       id: `orchestrator-${sessionId}`,
       name: 'workflow-orchestrator',
       displayName: `Orchestrator: ${plan.title}`,
       organizationId,
       systemPrompt: '',
+      model: resolvedModel.modelId,
+      resolvedModel,
       skillIds: [],
       mcpServerIds: [],
     };
