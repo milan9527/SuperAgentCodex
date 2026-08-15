@@ -63,6 +63,7 @@ interface Manifest {
 }
 
 interface PackInfo {
+  packId: string;
   dirPath: string;
   template: TemplateInput;
   manifest: Manifest | null;
@@ -85,6 +86,9 @@ function discoverPacks(): PackInfo[] {
   for (const entry of entries) {
     if (!entry.isDirectory() || !entry.name.startsWith('industry-pack-')) continue;
 
+    const packId = entry.name.slice('industry-pack-'.length);
+    if (!packId) continue;
+
     const dirPath = path.join(baseDir, entry.name);
     const templatePath = path.join(dirPath, 'template-input.json');
     if (!fs.existsSync(templatePath)) continue;
@@ -97,7 +101,7 @@ function discoverPacks(): PackInfo[] {
       manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     }
 
-    packs.push({ dirPath, template, manifest });
+    packs.push({ packId, dirPath, template, manifest });
   }
 
   return packs;
@@ -122,12 +126,6 @@ async function main() {
   const orgId = org.id;
   console.log(`Organization: ${org.name} (${orgId})\n`);
 
-  // Clean existing showcase data
-  const deletedCases = await prisma.showcase_cases.deleteMany({ where: { organization_id: orgId } });
-  const deletedDomains = await prisma.showcase_domains.deleteMany({ where: { organization_id: orgId } });
-  const deletedIndustries = await prisma.showcase_industries.deleteMany({ where: { organization_id: orgId } });
-  console.log(`🗑️  Cleaned existing showcase data: ${deletedIndustries.count} industries, ${deletedDomains.count} domains, ${deletedCases.count} cases\n`);
-
   const packs = discoverPacks();
   console.log(`Discovered ${packs.length} industry packs\n`);
 
@@ -136,8 +134,8 @@ async function main() {
   let totalCases = 0;
 
   for (const pack of packs) {
-    const { template, manifest, dirPath } = pack;
-    const slug = template.id;
+    const { packId, template, manifest, dirPath } = pack;
+    const slug = packId;
     const industryName = template.industry;
     const icon = manifest?.industry?.icon || template.icon;
 
@@ -163,6 +161,14 @@ async function main() {
       });
       totalIndustries++;
       console.log(`   + Industry: ${industryName}`);
+    } else {
+      industry = await prisma.showcase_industries.update({
+        where: { id: industry.id },
+        data: {
+          name: industryName,
+          is_active: true,
+        },
+      });
     }
 
     // Process scopes → domains + cases
@@ -197,6 +203,15 @@ async function main() {
         });
         totalDomains++;
         console.log(`   + Domain: ${scope.name}`);
+      } else {
+        domain = await prisma.showcase_domains.update({
+          where: { id: domain.id },
+          data: {
+            name_en: scope.dirName !== scope.name ? scope.dirName : null,
+            icon,
+            sort_order: i,
+          },
+        });
       }
 
       // Create main case for this scope
@@ -208,25 +223,37 @@ async function main() {
         where: { organization_id: orgId, domain_id: domain.id, title: caseTitle },
       });
 
+      const caseData = {
+        description: caseDesc.slice(0, 500),
+        initial_prompt: prompt,
+        run_config: {
+          source: 'industry-pack',
+          pack_id: slug,
+          scope_dir: scope.dirName,
+          agent_count: scope.agents.length || (scopeSeed?.agentCountHint || 0),
+          has_workflow: scope.hasWorkflow,
+        },
+        sort_order: 0,
+        is_active: true,
+      };
+
       if (!existingCase) {
         await prisma.showcase_cases.create({
           data: {
             organization_id: orgId,
             domain_id: domain.id,
             title: caseTitle,
-            description: caseDesc.slice(0, 500),
-            initial_prompt: prompt,
-            run_config: {
-              source: 'industry-pack',
-              pack_id: slug,
-              scope_dir: scope.dirName,
-              agent_count: scope.agents.length || (scopeSeed?.agentCountHint || 0),
-              has_workflow: scope.hasWorkflow,
-            },
-            sort_order: 0,
+            ...caseData,
           },
         });
         totalCases++;
+      } else if (
+        (existingCase.run_config as Record<string, unknown> | null)?.source === 'industry-pack'
+      ) {
+        await prisma.showcase_cases.update({
+          where: { id: existingCase.id },
+          data: caseData,
+        });
       }
 
       // For fully generated packs, create per-agent cases
@@ -244,24 +271,36 @@ async function main() {
                 where: { organization_id: orgId, domain_id: domain.id, title: agentTitle },
               });
 
+              const agentCaseData = {
+                description: agentDesc.slice(0, 500),
+                initial_prompt: `启动"${agentTitle}"智能体。${agentDesc.slice(0, 100)}。请模拟一个典型工作场景。`,
+                run_config: {
+                  source: 'industry-pack',
+                  pack_id: slug,
+                  scope_dir: scope.dirName,
+                  agent_name: agentDef.name,
+                },
+                sort_order: j + 1,
+                is_active: true,
+              };
+
               if (!existingAgentCase) {
                 await prisma.showcase_cases.create({
                   data: {
                     organization_id: orgId,
                     domain_id: domain.id,
                     title: agentTitle,
-                    description: agentDesc.slice(0, 500),
-                    initial_prompt: `启动"${agentTitle}"智能体。${agentDesc.slice(0, 100)}。请模拟一个典型工作场景。`,
-                    run_config: {
-                      source: 'industry-pack',
-                      pack_id: slug,
-                      scope_dir: scope.dirName,
-                      agent_name: agentDef.name,
-                    },
-                    sort_order: j + 1,
+                    ...agentCaseData,
                   },
                 });
                 totalCases++;
+              } else if (
+                (existingAgentCase.run_config as Record<string, unknown> | null)?.source === 'industry-pack'
+              ) {
+                await prisma.showcase_cases.update({
+                  where: { id: existingAgentCase.id },
+                  data: agentCaseData,
+                });
               }
             } catch { /* skip malformed */ }
           }
@@ -292,6 +331,15 @@ async function main() {
           });
           totalDomains++;
           console.log(`   + Domain: 行业专家 (Digital Twins)`);
+        } else {
+          twinDomain = await prisma.showcase_domains.update({
+            where: { id: twinDomain.id },
+            data: {
+              name_en: 'Digital Twins',
+              icon: '👤',
+              sort_order: 999,
+            },
+          });
         }
 
         for (let t = 0; t < twinEntries.length; t++) {
@@ -309,24 +357,36 @@ async function main() {
               where: { organization_id: orgId, domain_id: twinDomain.id, title: twinName },
             });
 
+            const twinCaseData = {
+              description: `${twinRole}${twinDesc ? ' — ' + twinDesc.slice(0, 300) : ''}`,
+              initial_prompt: `你好，我想和"${twinName}"（${twinRole}）进行一次战略咨询对话。请以该角色的专业视角，帮我分析当前业务挑战并给出建议。`,
+              run_config: {
+                source: 'industry-pack',
+                pack_id: slug,
+                twin_dir: twinEntry.name,
+                type: 'digital_twin',
+              },
+              sort_order: t,
+              is_active: true,
+            };
+
             if (!existingTwinCase) {
               await prisma.showcase_cases.create({
                 data: {
                   organization_id: orgId,
                   domain_id: twinDomain.id,
                   title: twinName,
-                  description: `${twinRole}${twinDesc ? ' — ' + twinDesc.slice(0, 300) : ''}`,
-                  initial_prompt: `你好，我想和"${twinName}"（${twinRole}）进行一次战略咨询对话。请以该角色的专业视角，帮我分析当前业务挑战并给出建议。`,
-                  run_config: {
-                    source: 'industry-pack',
-                    pack_id: slug,
-                    twin_dir: twinEntry.name,
-                    type: 'digital_twin',
-                  },
-                  sort_order: t,
+                  ...twinCaseData,
                 },
               });
               totalCases++;
+            } else if (
+              (existingTwinCase.run_config as Record<string, unknown> | null)?.source === 'industry-pack'
+            ) {
+              await prisma.showcase_cases.update({
+                where: { id: existingTwinCase.id },
+                data: twinCaseData,
+              });
             }
           } catch { /* skip malformed */ }
         }

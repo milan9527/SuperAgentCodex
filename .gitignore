@@ -23,3 +23,7 @@ infra/cdk.context.json
 frontend/.env.production
 **/cdk.out/
 **/cdk.context.json
+
+# Deployment-only staging area populated from the tracked root industry-packs/.
+backend/industry-packs-build/*
+!backend/industry-packs-build/.gitkeep

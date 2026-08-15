@@ -93,6 +93,14 @@ interface MemoryEntry {
   is_pinned?: boolean;
 }
 
+const INDUSTRY_PACK_PREFIX = 'industry-pack-';
+
+export function getPackIdFromDirectory(directoryName: string): string | null {
+  if (!directoryName.startsWith(INDUSTRY_PACK_PREFIX)) return null;
+  const packId = directoryName.slice(INDUSTRY_PACK_PREFIX.length);
+  return packId || null;
+}
+
 // ============================================================================
 // Service
 // ============================================================================
@@ -159,7 +167,8 @@ class PackDeployService {
 
     const entries = await readdir(baseDir, { withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isDirectory() || !entry.name.startsWith('industry-pack-')) continue;
+      const packId = getPackIdFromDirectory(entry.name);
+      if (!entry.isDirectory() || !packId) continue;
 
       const packDir = join(baseDir, entry.name);
       const manifestPath = join(packDir, 'manifest.json');
@@ -167,14 +176,12 @@ class PackDeployService {
 
       if (!existsSync(manifestPath) && !existsSync(templatePath)) continue;
 
-      let packId: string;
       let industry: string;
       let icon: string;
       let scopes: Array<{ dirName: string; name: string; agentCount: number; description: string }> = [];
 
       if (existsSync(manifestPath)) {
         const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'));
-        packId = manifest.industry?.id || entry.name.replace('industry-pack-', '');
         industry = manifest.industry?.name || packId;
         icon = manifest.industry?.icon || '📦';
         scopes = (manifest.scopes || []).map((s: any) => ({
@@ -185,7 +192,6 @@ class PackDeployService {
         }));
       } else {
         const template = JSON.parse(await readFile(templatePath, 'utf-8'));
-        packId = template.id;
         industry = template.industry;
         icon = template.icon;
         scopes = (template.scopeSeeds || []).map((s: any) => ({

@@ -65,6 +65,8 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+INDUSTRY_PACKS_SOURCE="$PROJECT_ROOT/industry-packs"
+INDUSTRY_PACKS_BUILD_DIR="$PROJECT_ROOT/backend/industry-packs-build"
 RUN_ID="$(date -u +%Y%m%d%H%M%S)"
 GIT_SHA="$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo local)"
 HOST_ARCH="$(uname -m)"
@@ -72,6 +74,13 @@ TARGET_PLATFORM="linux/arm64"
 TEMP_FILES=()
 
 cleanup() {
+  if [[ -d "$INDUSTRY_PACKS_BUILD_DIR" ]]; then
+    find "$INDUSTRY_PACKS_BUILD_DIR" \
+      -mindepth 1 \
+      -maxdepth 1 \
+      ! -name '.gitkeep' \
+      -exec rm -rf -- {} +
+  fi
   if [[ ${#TEMP_FILES[@]} -gt 0 ]]; then
     rm -f "${TEMP_FILES[@]}"
   fi
@@ -87,7 +96,7 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
 }
 
-for command_name in aws docker node npm npx jq python3 openssl curl git sort; do
+for command_name in aws docker node npm npx jq python3 openssl curl git sort rsync; do
   require_command "$command_name"
 done
 
@@ -430,7 +439,24 @@ if [[ "$SKIP_BACKEND" == false ]]; then
       --username AWS \
       --password-stdin "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
-  mkdir -p "$PROJECT_ROOT/backend/industry-packs-build"
+  [[ -d "$INDUSTRY_PACKS_SOURCE" ]] \
+    || fail "Industry packs source directory not found: $INDUSTRY_PACKS_SOURCE"
+  mkdir -p "$INDUSTRY_PACKS_BUILD_DIR"
+  rsync -a --delete \
+    --exclude '.gitkeep' \
+    "$INDUSTRY_PACKS_SOURCE/" \
+    "$INDUSTRY_PACKS_BUILD_DIR/"
+  INDUSTRY_PACK_COUNT="$(find "$INDUSTRY_PACKS_BUILD_DIR" \
+    -mindepth 1 \
+    -maxdepth 1 \
+    -type d \
+    -name 'industry-pack-*' \
+    | wc -l \
+    | tr -d '[:space:]')"
+  [[ "$INDUSTRY_PACK_COUNT" -gt 0 ]] \
+    || fail "No industry packs were staged for the backend image."
+  echo "  Staged $INDUSTRY_PACK_COUNT industry packs for the backend image."
+
   docker buildx build \
     --platform "$TARGET_PLATFORM" \
     --tag "$BACKEND_ECR_URI:$BACKEND_IMAGE_TAG" \
@@ -573,7 +599,7 @@ PY
   jq -n '{
     containerOverrides: [{
       name: "migrate",
-      command: ["npx tsx prisma/seed.ts && npx tsx prisma/seed-local-auth.ts"]
+      command: ["npx tsx prisma/seed.ts && npx tsx prisma/seed-local-auth.ts && npx tsx prisma/seed-showcase-from-packs.ts"]
     }]
   }' >"$SEED_OVERRIDES_FILE"
   run_one_off_task "database seed" "$MIGRATION_TASK_DEF" "$SEED_OVERRIDES_FILE"
@@ -686,15 +712,25 @@ PY
     --services "$ECS_SERVICE_NAME" \
     --region "$REGION"
 
-  SERVICE_STATE="$(aws ecs describe-services \
-    --cluster "$ECS_CLUSTER_NAME" \
-    --services "$ECS_SERVICE_NAME" \
-    --region "$REGION" \
-    --query 'services[0]' \
-    --output json)"
+  SERVICE_STATE=""
+  for ((attempt = 1; attempt <= 24; attempt++)); do
+    SERVICE_STATE="$(aws ecs describe-services \
+      --cluster "$ECS_CLUSTER_NAME" \
+      --services "$ECS_SERVICE_NAME" \
+      --region "$REGION" \
+      --query 'services[0]' \
+      --output json)"
+    ROLLOUT_STATE="$(jq -r \
+      '.deployments[] | select(.status == "PRIMARY") | .rolloutState // "COMPLETED"' \
+      <<<"$SERVICE_STATE")"
+    [[ "$ROLLOUT_STATE" != "FAILED" ]] \
+      || fail "ECS deployment entered the FAILED rollout state."
+    [[ "$ROLLOUT_STATE" == "COMPLETED" ]] && break
+    sleep 5
+  done
   [[ "$(jq -r '.runningCount' <<<"$SERVICE_STATE")" == "1" ]] \
     || fail "ECS service is not running exactly one task."
-  [[ "$(jq -r '.deployments[0].rolloutState // "COMPLETED"' <<<"$SERVICE_STATE")" == "COMPLETED" ]] \
+  [[ "$ROLLOUT_STATE" == "COMPLETED" ]] \
     || fail "ECS deployment did not reach COMPLETED."
 
   curl --fail --silent --show-error \
